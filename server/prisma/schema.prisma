@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Marketplace (Listing) ---
+
+model Listing {
+  id             String         @id @default(cuid())
+  userId         String
+  title          String
+  description    String?
+  category       ListingCategory
+  game           Game
+  language       Language
+  condition      CardCondition
+  setCode        String?
+  cardId         String?
+  cardName       String?
+  edition        String?
+  attributesJson Json?
+  quantity       Int            @default(1)
+  priceCents     Int
+  currency       String         @default("EUR")
+  status         ListingStatus  @default(DRAFT)
+  publishedAt    DateTime?
+  soldAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  events         ListingEvent[]
+
+  @@index([userId])
+  @@index([status, createdAt])
+  @@index([status, publishedAt])
+  @@index([status, priceCents])
+  @@index([userId, status])
+  @@index([game, language, condition])
+  @@index([cardId])
+  @@index([setCode])
+}
+
+enum ListingCategory {
+  CARD
+  SEALED
+  ACCESSORY
+}
+
+enum Game {
+  POKEMON
+  ONE_PIECE
+  MTG
+  YUGIOH
+  LORCANA
+  OTHER
+}
+
+enum Language {
+  FR
+  EN
+  JP
+  DE
+  ES
+  IT
+  OTHER
+}
+
+enum CardCondition {
+  NM
+  LP
+  MP
+  HP
+  DMG
+}
+
+enum ListingStatus {
+  DRAFT
+  PUBLISHED
+  SOLD
+  ARCHIVED
+}
+
+model ListingEvent {
+  id          String          @id @default(cuid())
+  listingId   String
+  listing     Listing         @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  type        ListingEventType
+  actorUserId String
+  metadataJson Json?
+  createdAt   DateTime        @default(now())
+
+  @@index([listingId])
+  @@index([actorUserId])
+}
+
+enum ListingEventType {
+  CREATED
+  PUBLISHED
+  UPDATED
+  SOLD
+  ARCHIVED
+}
+
+// --- Trade (UserCollection, TradeOffer) ---
+
+model UserCollection {
+  id        String        @id @default(cuid())
+  userId    String
+  cardId    String
+  cardName  String?
+  setCode   String?
+  game      Game?
+  language  Language
+  condition CardCondition
+  quantity  Int           @default(1)
+  isPublic  Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([userId, cardId, language, condition])
+  @@index([userId])
+  @@index([userId, isPublic])
+  @@index([cardId])
+}
+
+// creatorItemsJson / receiverItemsJson : JSON avec au minimum { "schemaVersion": number } en racine.
+// schemaVersion permet d'évoluer le format des items (cartes, quantités, conditions) sans casser l'existant.
+model TradeOffer {
+  id                 String            @id @default(cuid())
+  creatorUserId      String
+  receiverUserId     String
+  creatorItemsJson   Json
+  receiverItemsJson Json
+  status             TradeOfferStatus  @default(PENDING)
+  expiresAt          DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  events             TradeEvent[]
+
+  @@index([creatorUserId])
+  @@index([receiverUserId])
+  @@index([status, createdAt])
+  @@index([status, expiresAt])
+}
+
+enum TradeOfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model TradeEvent {
+  id            String         @id @default(cuid())
+  tradeOfferId  String
+  tradeOffer    TradeOffer     @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+  type          TradeEventType
+  actorUserId   String
+  metadataJson  Json?
+  createdAt     DateTime       @default(now())
+
+  @@index([tradeOfferId])
+  @@index([actorUserId])
+}
+
+enum TradeEventType {
+  CREATED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+// --- User Profile (local cache) ---
+
+model UserProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  username     String
+  avatarUrl    String?
+  bio          String?
+  country      String?
+  trustScore   Float    @default(0)
+  tradeCount   Int      @default(0)
+  listingCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([username])
+}
+
+// --- Analytics (Price Snapshots) ---
+
+model PriceSnapshot {
+  id               String   @id @default(cuid())
+  cardId           String
+  language         Language
+  day              DateTime @db.Date
+  medianPriceCents Int
+  minPriceCents    Int
+  maxPriceCents    Int
+  volume           Int
+  createdAt        DateTime @default(now())
+
+  @@unique([cardId, language, day])
+  @@index([cardId, language])
+}
+
+// --- Stop-loss (Price Alerts) ---
+
+model PriceAlert {
+  id             String         @id @default(cuid())
+  userId         String
+  cardId         String
+  language       Language
+  thresholdCents Int
+  direction      AlertDirection
+  active         Boolean        @default(true)
+  triggeredAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([cardId, language])
+  @@index([active, direction])
+}
+
+enum AlertDirection {
+  DROP
+  RISE
+}

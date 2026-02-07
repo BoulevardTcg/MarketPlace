@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma migrate dev:*)",
+      "Bash(npx cross-env:*)",
+      "Bash(npm test:*)"
+    ]
+  }
+}

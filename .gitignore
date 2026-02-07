@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Environment (ne pas commiter les secrets)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / éditeurs
+.idea/
+*.swp
+*.swo
+
+# Test / coverage
+coverage/
+.db/
+
+# Prisma (client généré en test)
+**/src/test/prisma-client/
