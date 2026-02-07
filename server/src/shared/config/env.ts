@@ -12,6 +12,10 @@ const envSchema = z.object({
   JWT_PUBLIC_KEY: z.string().optional(),
   JWT_SECRET: z.string().optional(),
   CORS_ORIGIN: z.string().optional(),
+  /** S3 bucket for listing images (presigned upload). If unset, presigned-upload returns 503. */
+  LISTING_IMAGES_BUCKET: z.string().optional(),
+  /** AWS region for S3 (e.g. eu-west-1). Required when LISTING_IMAGES_BUCKET is set. */
+  AWS_REGION: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

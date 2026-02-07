@@ -210,4 +210,84 @@ describe("Collection", () => {
     const res = await request(app).get("/collection");
     expect(res.status).toBe(401);
   });
+
+  // ─── Dashboard ────────────────────────────────────────────────
+
+  it("GET /collection/dashboard returns shape with totalQty and breakdowns", async () => {
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "c1",
+        language: "FR",
+        condition: "NM",
+        quantity: 2,
+        game: "POKEMON",
+      });
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "c2",
+        language: "EN",
+        condition: "LP",
+        quantity: 1,
+        game: "POKEMON",
+      });
+
+    const res = await request(app)
+      .get("/collection/dashboard")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.totalQty).toBe(3);
+    expect(res.body.data.breakdownByGame).toBeDefined();
+    expect(res.body.data.breakdownByLanguage).toBeDefined();
+    expect(res.body.data.breakdownByCondition).toBeDefined();
+    expect(res.body.data.masterSetProgress).toBeNull();
+  });
+
+  it("GET /collection/dashboard without token returns 401", async () => {
+    const res = await request(app).get("/collection/dashboard");
+    expect(res.status).toBe(401);
+  });
+
+  // ─── Public collection (privacy) ────────────────────────────────
+
+  it("GET /users/:id/collection returns only public items", async () => {
+    const otherUserId = "other-public-collection";
+    const otherToken = makeToken(otherUserId);
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .send({
+        cardId: "public-card",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        isPublic: true,
+      });
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${otherToken}`)
+      .send({
+        cardId: "private-card",
+        language: "EN",
+        condition: "NM",
+        quantity: 1,
+        isPublic: false,
+      });
+
+    const res = await request(app).get(
+      `/users/${otherUserId}/collection?limit=50`
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toHaveLength(1);
+    expect(res.body.data.items[0].cardId).toBe("public-card");
+  });
+
+  it("GET /users/:id/collection returns empty when no public items", async () => {
+    const res = await request(app).get(`/users/${userId}/collection`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toEqual([]);
+  });
 });

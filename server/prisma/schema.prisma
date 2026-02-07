@@ -33,6 +33,9 @@ model Listing {
   updatedAt      DateTime      @updatedAt
 
   events         ListingEvent[]
+  handovers      Handover[]
+  images         ListingImage[]
+  favorites      Favorite[]
 
   @@index([userId])
   @@index([status, createdAt])
@@ -105,6 +108,34 @@ enum ListingEventType {
   ARCHIVED
 }
 
+model ListingImage {
+  id          String   @id @default(cuid())
+  listingId   String
+  storageKey  String
+  sortOrder   Int      @default(0)
+  contentType String?
+  createdAt   DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
+
+// --- Favorites (wishlist listings) ---
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listingId])
+  @@index([userId])
+  @@index([listingId])
+}
+
 // --- Trade (UserCollection, TradeOffer) ---
 
 model UserCollection {
@@ -130,22 +161,27 @@ model UserCollection {
 // creatorItemsJson / receiverItemsJson : JSON avec au minimum { "schemaVersion": number } en racine.
 // schemaVersion permet d'évoluer le format des items (cartes, quantités, conditions) sans casser l'existant.
 model TradeOffer {
-  id                 String            @id @default(cuid())
-  creatorUserId      String
-  receiverUserId     String
-  creatorItemsJson   Json
-  receiverItemsJson Json
-  status             TradeOfferStatus  @default(PENDING)
-  expiresAt          DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  id                  String            @id @default(cuid())
+  creatorUserId       String
+  receiverUserId      String
+  creatorItemsJson    Json
+  receiverItemsJson   Json
+  status              TradeOfferStatus  @default(PENDING)
+  expiresAt           DateTime?
+  counterOfOfferId    String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
-  events             TradeEvent[]
+  events              TradeEvent[]
+  handovers           Handover[]
+  counterOf           TradeOffer?       @relation("CounterOffer", fields: [counterOfOfferId], references: [id], onDelete: SetNull)
+  counters            TradeOffer[]     @relation("CounterOffer")
 
   @@index([creatorUserId])
   @@index([receiverUserId])
   @@index([status, createdAt])
   @@index([status, expiresAt])
+  @@index([counterOfOfferId])
 }
 
 enum TradeOfferStatus {
@@ -175,6 +211,7 @@ enum TradeEventType {
   REJECTED
   CANCELLED
   EXPIRED
+  COUNTERED
 }
 
 // --- User Profile (local cache) ---
@@ -234,4 +271,32 @@ model PriceAlert {
 enum AlertDirection {
   DROP
   RISE
+}
+
+// --- P1: Remise en main propre (anti-fake) ---
+
+model Handover {
+  id                String         @id @default(cuid())
+  listingId         String?
+  tradeOfferId      String?
+  status            HandoverStatus @default(PENDING_VERIFICATION)
+  requestedByUserId String
+  verifiedByUserId  String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  listing    Listing?    @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  tradeOffer TradeOffer? @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+
+  @@index([requestedByUserId])
+  @@index([status])
+  @@index([requestedByUserId, status])
+  @@index([listingId])
+  @@index([tradeOfferId])
+}
+
+enum HandoverStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
 }

@@ -3,7 +3,9 @@ import type { RequestWithUser } from "./requireAuth.js";
 
 /**
  * Factory that returns a middleware checking the authenticated user has the given role.
- * Must be placed AFTER requireAuth in the middleware chain.
+ * Must be placed AFTER requireAuth. Uses req.user.roles (from JWT payload.roles).
+ * En prod : s'assurer que l'issuer (Shop) envoie bien payload.roles (ou realm_access.roles
+ * selon le provider) avec les valeurs attendues (ex. "ADMIN", "SELLER").
  */
 export function requireRole(role: string) {
   return (req: Request, res: Response, next: NextFunction): void => {

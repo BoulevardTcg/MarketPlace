@@ -409,6 +409,88 @@ describe("Marketplace", () => {
       expect(listing!.soldAt).not.toBeNull();
     });
 
+    it("mark-sold with cardId decrements seller inventory", async () => {
+      const token = makeToken("seller-inv");
+      await request(app)
+        .put("/collection/items")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          cardId: "sold-card-1",
+          language: "FR",
+          condition: "NM",
+          quantity: 3,
+        });
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Card for sale",
+          priceCents: 1000,
+          quantity: 2,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+          cardId: "sold-card-1",
+        });
+      const id = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${id}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      await request(app)
+        .post(`/marketplace/listings/${id}/mark-sold`)
+        .set("Authorization", `Bearer ${token}`);
+
+      const row = await prisma.userCollection.findUnique({
+        where: {
+          userId_cardId_language_condition: {
+            userId: "seller-inv",
+            cardId: "sold-card-1",
+            language: "FR",
+            condition: "NM",
+          },
+        },
+      });
+      expect(row?.quantity).toBe(1);
+    });
+
+    it("mark-sold with cardId returns 409 when seller inventory insufficient", async () => {
+      const token = makeToken("seller-low");
+      await request(app)
+        .put("/collection/items")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          cardId: "low-card",
+          language: "FR",
+          condition: "NM",
+          quantity: 1,
+        });
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Card",
+          priceCents: 500,
+          quantity: 2,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+          cardId: "low-card",
+        });
+      const id = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${id}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      const res = await request(app)
+        .post(`/marketplace/listings/${id}/mark-sold`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(409);
+      expect(res.body.error?.code).toBe("INSUFFICIENT_QUANTITY");
+    });
+
     it("mark-sold from DRAFT returns 409", async () => {
       const token = makeToken("owner-1");
       const createRes = await request(app)
@@ -528,6 +610,306 @@ describe("Marketplace", () => {
       expect(res.status).toBe(200);
       expect(res.body.data.items).toHaveLength(1);
       expect(res.body.data.items[0].status).toBe("DRAFT");
+    });
+  });
+
+  describe("Listing images", () => {
+    it("POST presigned-upload returns 503 when S3 not configured", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/presigned-upload`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(503);
+      expect(res.body.error?.code).toBe("SERVICE_UNAVAILABLE");
+    });
+
+    it("POST attach creates image and GET list returns it", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const storageKey = `listings/${listingId}/550e8400-e29b-41d4-a716-446655440000.jpg`;
+      const attachRes = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey, sortOrder: 0 });
+      expect(attachRes.status).toBe(201);
+      expect(attachRes.body.data.imageId).toBeDefined();
+      expect(attachRes.body.data.image.storageKey).toBe(storageKey);
+
+      const listRes = await request(app)
+        .get(`/marketplace/listings/${listingId}/images`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(listRes.status).toBe(200);
+      expect(listRes.body.data.items).toHaveLength(1);
+      expect(listRes.body.data.items[0].storageKey).toBe(storageKey);
+    });
+
+    it("POST attach returns 400 for invalid storageKey format", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey: "invalid/key.jpg" });
+      expect(res.status).toBe(400);
+    });
+
+    it("POST attach returns 409 when listing has max 8 images", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      for (let i = 0; i < 8; i++) {
+        const storageKey = `listings/${listingId}/${"00000000-0000-4000-8000-00000000000" + i}.jpg`;
+        await request(app)
+          .post(`/marketplace/listings/${listingId}/images/attach`)
+          .set("Authorization", `Bearer ${token}`)
+          .send({ storageKey, sortOrder: i });
+      }
+      const storageKey = `listings/${listingId}/550e8400-e29b-41d4-a716-446655440099.jpg`;
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey });
+      expect(res.status).toBe(409);
+      expect(res.body.error?.code).toBe("CONFLICT");
+    });
+
+    it("GET listing images returns 404 for other user draft", async () => {
+      const token1 = makeToken("user-1");
+      const token2 = makeToken("user-2");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token1}`)
+        .send({
+          title: "Draft",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const res = await request(app)
+        .get(`/marketplace/listings/${listingId}/images`)
+        .set("Authorization", `Bearer ${token2}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("DELETE image removes it (owner only)", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const storageKey = `listings/${listingId}/550e8400-e29b-41d4-a716-446655440001.jpg`;
+      const attachRes = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey });
+      const imageId = attachRes.body.data.imageId;
+
+      const delRes = await request(app)
+        .delete(`/marketplace/listings/${listingId}/images/${imageId}`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(delRes.status).toBe(200);
+
+      const listRes = await request(app)
+        .get(`/marketplace/listings/${listingId}/images`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(listRes.body.data.items).toHaveLength(0);
+    });
+
+    it("PATCH reorder updates sortOrder", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const a = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey: `listings/${listingId}/550e8400-e29b-41d4-a716-44665544000a.jpg`, sortOrder: 0 });
+      const b = await request(app)
+        .post(`/marketplace/listings/${listingId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey: `listings/${listingId}/550e8400-e29b-41d4-a716-44665544000b.jpg`, sortOrder: 1 });
+      const idA = a.body.data.imageId;
+      const idB = b.body.data.imageId;
+
+      const reorderRes = await request(app)
+        .patch(`/marketplace/listings/${listingId}/images/reorder`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ imageIds: [idB, idA] });
+      expect(reorderRes.status).toBe(200);
+      expect(reorderRes.body.data.items[0].id).toBe(idB);
+      expect(reorderRes.body.data.items[1].id).toBe(idA);
+    });
+  });
+
+  describe("Favorites", () => {
+    it("POST toggle adds favorite for PUBLISHED listing", async () => {
+      const token = makeToken("user-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      const otherToken = makeToken("other-user");
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/favorite`)
+        .set("Authorization", `Bearer ${otherToken}`);
+      expect(res.status).toBe(201);
+      expect(res.body.data.favorited).toBe(true);
+    });
+
+    it("POST toggle removes favorite when already favorited", async () => {
+      const token = makeToken("user-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "My card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/favorite`)
+        .set("Authorization", `Bearer ${token}`);
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/favorite`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.favorited).toBe(false);
+    });
+
+    it("POST toggle returns 409 for DRAFT listing", async () => {
+      const token = makeToken("user-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Draft",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingId}/favorite`)
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(409);
+      expect(res.body.error?.code).toBe("INVALID_STATE");
+    });
+
+    it("GET /marketplace/me/favorites returns only own favorites", async () => {
+      const token = makeToken("user-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingId = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/favorite`)
+        .set("Authorization", `Bearer ${token}`);
+
+      const res = await request(app)
+        .get("/marketplace/me/favorites")
+        .set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toHaveLength(1);
+      expect(res.body.data.items[0].listing.id).toBe(listingId);
+      expect(res.body.data.items[0].favoriteId).toBeDefined();
     });
   });
 });

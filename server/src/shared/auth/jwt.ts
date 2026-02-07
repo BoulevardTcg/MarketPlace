@@ -2,6 +2,14 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import type { AuthUser } from "./types.js";
 
+/**
+ * JWT payload attendu (Shop / issuer).
+ * - userId / sub : identifiant utilisateur
+ * - roles : tableau de rôles pour requireRole(). req.user.roles est alimenté ici.
+ *   Claim exact attendu : payload.roles (array de strings). Valeurs ex. "ADMIN", "SELLER".
+ *   En prod : vérifier avec l'issuer (Shop) le claim réel (peut être realm_access.roles
+ *   ou resource_access.<client>.roles selon Keycloak/OAuth). Adapter l'extraction si besoin.
+ */
 interface JwtPayload {
   sub: string;
   userId?: string;

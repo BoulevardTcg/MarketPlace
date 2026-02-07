@@ -11,6 +11,10 @@ import { authRoutes } from "./domains/auth/routes.js";
 import { marketplaceRoutes } from "./domains/marketplace/routes.js";
 import { tradeRoutes } from "./domains/trade/routes.js";
 import { collectionRoutes } from "./domains/collection/routes.js";
+import { profileRoutes } from "./domains/profile/routes.js";
+import { analyticsRoutes } from "./domains/analytics/routes.js";
+import { handoverRoutes } from "./domains/handover/routes.js";
+import { uploadRoutes } from "./domains/upload/routes.js";
 
 const app = express();
 
@@ -61,6 +65,10 @@ app.use(httpLoggerMiddleware);
 
 app.use(healthRoutes);
 app.use(authRoutes);
+app.use(profileRoutes);
+app.use(analyticsRoutes);
+app.use(handoverRoutes);
+app.use(uploadRoutes);
 app.use(marketplaceRoutes);
 app.use(tradeRoutes);
 app.use(collectionRoutes);

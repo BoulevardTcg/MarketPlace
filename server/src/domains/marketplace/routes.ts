@@ -24,6 +24,12 @@ import {
   decodeCursor,
   buildPage,
 } from "../../shared/http/pagination.js";
+import {
+  getPresignedUploadUrl,
+  isPresignedConfigured,
+  deleteListingImageFromS3,
+} from "../../shared/storage/presigned.js";
+import { randomUUID } from "node:crypto";
 
 const router = Router();
 
@@ -500,7 +506,7 @@ router.post(
       );
     }
 
-    // Atomic: updateMany with status guard prevents race conditions
+    // Atomic: update listing + event; if listing has cardId, decrement seller inventory
     const now = new Date();
     await prisma.$transaction(async (tx) => {
       const { count } = await tx.listing.updateMany({
@@ -522,9 +528,312 @@ router.post(
           metadataJson: { source: "api" },
         },
       });
+      if (listing.cardId) {
+        const { count } = await tx.userCollection.updateMany({
+          where: {
+            userId,
+            cardId: listing.cardId,
+            language: listing.language,
+            condition: listing.condition,
+            quantity: { gte: listing.quantity },
+          },
+          data: { quantity: { decrement: listing.quantity } },
+        });
+        if (count === 0) {
+          throw new AppError(
+            "INSUFFICIENT_QUANTITY",
+            "Seller inventory insufficient for this listing",
+            409,
+          );
+        }
+        await tx.userCollection.deleteMany({
+          where: {
+            userId,
+            cardId: listing.cardId,
+            language: listing.language,
+            condition: listing.condition,
+            quantity: { lte: 0 },
+          },
+        });
+      }
     });
 
     ok(res, { ok: true });
+  }),
+);
+
+// ─── Favorites (toggle + list) ───────────────────────────────────────────
+
+// POST /marketplace/listings/:id/favorite — toggle favorite (auth). Only PUBLISHED listings.
+router.post(
+  "/marketplace/listings/:id/favorite",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { id: true, status: true },
+    });
+    if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+    if (listing.status !== ListingStatus.PUBLISHED) {
+      throw new AppError("INVALID_STATE", "Only PUBLISHED listings can be favorited", 409);
+    }
+
+    const existing = await prisma.favorite.findUnique({
+      where: {
+        userId_listingId: { userId, listingId },
+      },
+    });
+    if (existing) {
+      await prisma.favorite.delete({ where: { id: existing.id } });
+      return ok(res, { favorited: false });
+    }
+    await prisma.favorite.create({
+      data: { userId, listingId },
+    });
+    ok(res, { favorited: true }, 201);
+  }),
+);
+
+// GET /marketplace/me/favorites — list my favorites (auth), paginated
+router.get(
+  "/marketplace/me/favorites",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = (req as RequestWithUser).user.userId;
+    const query = paginationQuerySchema.parse(req.query);
+    const { cursor, limit } = query;
+
+    const where: Prisma.FavoriteWhereInput = { userId };
+    if (cursor) {
+      const { v, id: cursorId } = decodeCursor(cursor) as { v?: string; id?: string };
+      const val = v ? new Date(v) : undefined;
+      if (val && cursorId) {
+        where.OR = [
+          { createdAt: { lt: val } },
+          { createdAt: val, id: { lt: cursorId } },
+        ];
+      }
+    }
+
+    const favorites = await prisma.favorite.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      include: { listing: true },
+    });
+
+    const page = buildPage(favorites, limit, (f) => ({
+      v: f.createdAt.toISOString(),
+      id: f.id,
+    }));
+    const items = page.items.map((f) => ({
+      favoriteId: f.id,
+      createdAt: f.createdAt,
+      listing: f.listing,
+    }));
+    ok(res, { items, nextCursor: page.nextCursor });
+  }),
+);
+
+// ─── Listing images (presigned upload + attach / delete / reorder) ────────
+
+const MAX_IMAGES_PER_LISTING = 8;
+const ALLOWED_IMAGE_CONTENT_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
+/** storageKey must be listings/{listingId}/{uuid}.(jpg|jpeg|png|webp); listingId = CUID alphanum */
+const STORAGE_KEY_REGEX = /^listings\/[A-Za-z0-9]+\/[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$/i;
+
+const presignedUploadBodySchema = z.object({
+  contentType: z
+    .enum(ALLOWED_IMAGE_CONTENT_TYPES)
+    .optional()
+    .default("image/jpeg"),
+});
+
+const attachImageBodySchema = z.object({
+  storageKey: z
+    .string()
+    .min(1, "storageKey is required")
+    .regex(STORAGE_KEY_REGEX, "storageKey must be listings/{listingId}/{uuid}.jpg|jpeg|png|webp"),
+  sortOrder: z.number().int().min(0).optional(),
+  contentType: z.enum(ALLOWED_IMAGE_CONTENT_TYPES).optional(),
+});
+
+const reorderImagesBodySchema = z.object({
+  imageIds: z.array(z.string().min(1)).min(1, "imageIds must not be empty"),
+});
+
+async function getListingAsOwner(
+  listingId: string,
+  userId: string,
+): Promise<{ id: string; userId: string }> {
+  const listing = await prisma.listing.findUnique({
+    where: { id: listingId },
+    select: { id: true, userId: true },
+  });
+  if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+  if (listing.userId !== userId) {
+    throw new AppError("FORBIDDEN", "Not allowed to modify this listing", 403);
+  }
+  return listing;
+}
+
+// POST /marketplace/listings/:id/images/presigned-upload — get presigned URL for upload (owner only)
+router.post(
+  "/marketplace/listings/:id/images/presigned-upload",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    await getListingAsOwner(listingId, userId);
+
+    if (!isPresignedConfigured()) {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "Listing image upload is not configured (LISTING_IMAGES_BUCKET / AWS_REGION)",
+        503,
+      );
+    }
+    const body = presignedUploadBodySchema.parse(req.body ?? {});
+    const contentType = body.contentType;
+    const ext = contentType === "image/png" ? "png" : contentType === "image/webp" ? "webp" : "jpg";
+    const storageKey = `listings/${listingId}/${randomUUID()}.${ext}`;
+
+    const result = await getPresignedUploadUrl(storageKey, contentType);
+    if (!result) {
+      throw new AppError(
+        "SERVICE_UNAVAILABLE",
+        "Presigned URL could not be generated",
+        503,
+      );
+    }
+    ok(res, {
+      uploadUrl: result.uploadUrl,
+      storageKey,
+      expiresIn: result.expiresIn,
+    });
+  }),
+);
+
+// POST /marketplace/listings/:id/images/attach — register an uploaded image (owner only), max 8 per listing
+router.post(
+  "/marketplace/listings/:id/images/attach",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    await getListingAsOwner(listingId, userId);
+    const body = attachImageBodySchema.parse(req.body);
+
+    const count = await prisma.listingImage.count({ where: { listingId } });
+    if (count >= MAX_IMAGES_PER_LISTING) {
+      throw new AppError(
+        "CONFLICT",
+        `Maximum ${MAX_IMAGES_PER_LISTING} images per listing`,
+        409,
+      );
+    }
+    const maxSort = await prisma.listingImage.aggregate({
+      where: { listingId },
+      _max: { sortOrder: true },
+    });
+    const sortOrder = body.sortOrder ?? (maxSort._max.sortOrder ?? -1) + 1;
+
+    const image = await prisma.listingImage.create({
+      data: {
+        listingId,
+        storageKey: body.storageKey,
+        sortOrder,
+        contentType: body.contentType ?? null,
+      },
+    });
+    ok(res, { imageId: image.id, image }, 201);
+  }),
+);
+
+// GET /marketplace/listings/:id/images — list images (owner or public if PUBLISHED)
+router.get(
+  "/marketplace/listings/:id/images",
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { userId: true, status: true },
+    });
+    if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+
+    const userId = (req as RequestWithOptionalUser).user?.userId;
+    const isOwner = userId === listing.userId;
+    const isPublic = listing.status === ListingStatus.PUBLISHED;
+    if (!isOwner && !isPublic) {
+      throw new AppError("NOT_FOUND", "Listing not found", 404);
+    }
+
+    const images = await prisma.listingImage.findMany({
+      where: { listingId },
+      orderBy: { sortOrder: "asc" },
+    });
+    ok(res, { items: images });
+  }),
+);
+
+// DELETE /marketplace/listings/:id/images/:imageId — remove image (owner only)
+router.delete(
+  "/marketplace/listings/:id/images/:imageId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { id: listingId, imageId } = req.params;
+    const userId = (req as RequestWithUser).user.userId;
+    await getListingAsOwner(listingId, userId);
+
+    const image = await prisma.listingImage.findFirst({
+      where: { id: imageId, listingId },
+    });
+    if (!image) throw new AppError("NOT_FOUND", "Image not found", 404);
+
+    await deleteListingImageFromS3(image.storageKey);
+    await prisma.listingImage.delete({ where: { id: imageId } });
+    ok(res, { ok: true });
+  }),
+);
+
+// PATCH /marketplace/listings/:id/images/reorder — set order (owner only)
+router.patch(
+  "/marketplace/listings/:id/images/reorder",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    await getListingAsOwner(listingId, userId);
+    const body = reorderImagesBodySchema.parse(req.body);
+
+    const images = await prisma.listingImage.findMany({
+      where: { listingId },
+      select: { id: true },
+    });
+    const idSet = new Set(images.map((i) => i.id));
+    for (const id of body.imageIds) {
+      if (!idSet.has(id)) {
+        throw new AppError("NOT_FOUND", `Image ${id} not found on this listing`, 404);
+      }
+    }
+
+    await prisma.$transaction(
+      body.imageIds.map((imageId, index) =>
+        prisma.listingImage.update({
+          where: { id: imageId },
+          data: { sortOrder: index },
+        }),
+      ),
+    );
+    const updated = await prisma.listingImage.findMany({
+      where: { listingId },
+      orderBy: { sortOrder: "asc" },
+    });
+    ok(res, { items: updated });
   }),
 );
 

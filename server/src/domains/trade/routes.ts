@@ -15,8 +15,73 @@ import {
   markExpiredIfNeeded,
   expirePendingOffers,
 } from "../../shared/trade/expiration.js";
+import { parseTradeItems } from "../../shared/trade/items.js";
+import type { TradeItem } from "../../shared/trade/items.js";
+import type { PrismaClient } from "@prisma/client";
 
 const router = Router();
+
+/** In a transaction: atomic decrement giver (quantity >= N), then increment receiver (upsert). */
+async function applyTradeItemMove(
+  tx: PrismaClient,
+  giverUserId: string,
+  receiverUserId: string,
+  item: TradeItem,
+  _direction: "decrement",
+): Promise<void> {
+  const { count } = await tx.userCollection.updateMany({
+    where: {
+      userId: giverUserId,
+      cardId: item.cardId,
+      language: item.language,
+      condition: item.condition,
+      quantity: { gte: item.quantity },
+    },
+    data: { quantity: { decrement: item.quantity } },
+  });
+  if (count === 0) {
+    throw new AppError(
+      "INSUFFICIENT_QUANTITY",
+      `Insufficient quantity for ${item.cardId} (${item.language}/${item.condition})`,
+      409,
+    );
+  }
+  await tx.userCollection.deleteMany({
+    where: {
+      userId: giverUserId,
+      cardId: item.cardId,
+      language: item.language,
+      condition: item.condition,
+      quantity: { lte: 0 },
+    },
+  });
+  const receiver = await tx.userCollection.findUnique({
+    where: {
+      userId_cardId_language_condition: {
+        userId: receiverUserId,
+        cardId: item.cardId,
+        language: item.language,
+        condition: item.condition,
+      },
+    },
+  });
+  if (receiver) {
+    await tx.userCollection.update({
+      where: { id: receiver.id },
+      data: { quantity: receiver.quantity + item.quantity },
+    });
+  } else {
+    await tx.userCollection.create({
+      data: {
+        userId: receiverUserId,
+        cardId: item.cardId,
+        language: item.language,
+        condition: item.condition,
+        quantity: item.quantity,
+      },
+    });
+  }
+}
 
 // ─── Zod Schemas ──────────────────────────────────────────────
 
@@ -48,6 +113,30 @@ const createTradeOfferBodySchema = z.object({
 const tradeOffersQuerySchema = paginationQuerySchema.extend({
   type: z.enum(["sent", "received"]),
   status: z.nativeEnum(TradeOfferStatus).optional(),
+});
+
+const counterOfferBodySchema = z.object({
+  creatorItemsJson: z
+    .record(z.unknown())
+    .refine(
+      (obj) =>
+        obj &&
+        typeof obj === "object" &&
+        "schemaVersion" in obj &&
+        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
+      { message: "creatorItemsJson must contain schemaVersion (number)" },
+    ),
+  receiverItemsJson: z
+    .record(z.unknown())
+    .refine(
+      (obj) =>
+        obj &&
+        typeof obj === "object" &&
+        "schemaVersion" in obj &&
+        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
+      { message: "receiverItemsJson must contain schemaVersion (number)" },
+    ),
+  expiresInHours: z.number().int().min(1).max(168).optional().default(72),
 });
 
 // ─── Routes ───────────────────────────────────────────────────
@@ -222,8 +311,83 @@ router.post(
       );
     }
 
-    // Atomic: updateMany with status guard prevents race conditions
+    // Cannot accept if a counter-offer exists (receiver already countered)
+    const counterExists = await prisma.tradeOffer.findFirst({
+      where: { counterOfOfferId: offerId },
+    });
+    if (counterExists) {
+      throw new AppError(
+        "OFFER_COUNTERED",
+        "This offer has been countered; accept the counter-offer instead",
+        409,
+      );
+    }
+
+    const creatorItems = parseTradeItems(offer.creatorItemsJson);
+    const receiverItems = parseTradeItems(offer.receiverItemsJson);
+    const creatorUserId = offer.creatorUserId;
+    const receiverUserId = offer.receiverUserId;
+
+    // Atomic: validate collections, apply inventory updates, then status + event
     await prisma.$transaction(async (tx) => {
+      for (const item of creatorItems) {
+        const row = await tx.userCollection.findUnique({
+          where: {
+            userId_cardId_language_condition: {
+              userId: creatorUserId,
+              cardId: item.cardId,
+              language: item.language,
+              condition: item.condition,
+            },
+          },
+        });
+        if (!row || row.quantity < item.quantity) {
+          throw new AppError(
+            "INSUFFICIENT_QUANTITY",
+            `Creator does not have enough of ${item.cardId} (${item.language}/${item.condition})`,
+            409,
+          );
+        }
+      }
+      for (const item of receiverItems) {
+        const row = await tx.userCollection.findUnique({
+          where: {
+            userId_cardId_language_condition: {
+              userId: receiverUserId,
+              cardId: item.cardId,
+              language: item.language,
+              condition: item.condition,
+            },
+          },
+        });
+        if (!row || row.quantity < item.quantity) {
+          throw new AppError(
+            "INSUFFICIENT_QUANTITY",
+            `Receiver does not have enough of ${item.cardId} (${item.language}/${item.condition})`,
+            409,
+          );
+        }
+      }
+
+      for (const item of creatorItems) {
+        await applyTradeItemMove(
+          tx as PrismaClient,
+          creatorUserId,
+          receiverUserId,
+          item,
+          "decrement",
+        );
+      }
+      for (const item of receiverItems) {
+        await applyTradeItemMove(
+          tx as PrismaClient,
+          receiverUserId,
+          creatorUserId,
+          item,
+          "decrement",
+        );
+      }
+
       const { count } = await tx.tradeOffer.updateMany({
         where: { id: offerId, status: TradeOfferStatus.PENDING },
         data: { status: TradeOfferStatus.ACCEPTED },
@@ -302,6 +466,74 @@ router.post(
     });
 
     ok(res, { ok: true });
+  }),
+);
+
+// POST /trade/offers/:id/counter — receiver-only. Creates new offer (creator = original receiver, receiver = original creator).
+router.post(
+  "/trade/offers/:id/counter",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const originalOfferId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    const body = counterOfferBodySchema.parse(req.body);
+
+    const original = await prisma.tradeOffer.findUnique({
+      where: { id: originalOfferId },
+    });
+    if (!original)
+      throw new AppError("NOT_FOUND", "Trade offer not found", 404);
+    if (original.receiverUserId !== userId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only the receiver of the original offer can counter",
+        403,
+      );
+    }
+    const afterExpiry = await markExpiredIfNeeded(original);
+    if (afterExpiry.status !== TradeOfferStatus.PENDING) {
+      throw new AppError(
+        "INVALID_STATE",
+        `Cannot counter (offer status: ${afterExpiry.status})`,
+        409,
+      );
+    }
+
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + body.expiresInHours);
+
+    const result = await prisma.$transaction(async (tx) => {
+      const counterOffer = await tx.tradeOffer.create({
+        data: {
+          creatorUserId: original.receiverUserId,
+          receiverUserId: original.creatorUserId,
+          creatorItemsJson: body.creatorItemsJson as object,
+          receiverItemsJson: body.receiverItemsJson as object,
+          status: TradeOfferStatus.PENDING,
+          expiresAt,
+          counterOfOfferId: originalOfferId,
+        },
+      });
+      await tx.tradeEvent.create({
+        data: {
+          tradeOfferId: counterOffer.id,
+          type: TradeEventType.CREATED,
+          actorUserId: userId,
+          metadataJson: { source: "api", counterOffer: true },
+        },
+      });
+      await tx.tradeEvent.create({
+        data: {
+          tradeOfferId: originalOfferId,
+          type: TradeEventType.COUNTERED,
+          actorUserId: userId,
+          metadataJson: { source: "api", counterOfferId: counterOffer.id },
+        },
+      });
+      return counterOffer;
+    });
+
+    ok(res, { tradeOfferId: result.id }, 201);
   }),
 );
 
