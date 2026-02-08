@@ -199,6 +199,63 @@ describe("Trade", () => {
     expect(res.body.data.events[0].type).toBe("CREATED");
   });
 
+  it("GET /trade/offers/:id returns counters correctly", async () => {
+    const offerId = await createOffer();
+    const counterRes = await request(app)
+      .post(`/trade/offers/${offerId}/counter`)
+      .set("Authorization", `Bearer ${receiverToken}`)
+      .send({
+        creatorItemsJson: { schemaVersion: 1, items: [] },
+        receiverItemsJson: { schemaVersion: 1, items: [] },
+      });
+    expect(counterRes.status).toBe(201);
+    const counterId = counterRes.body.data.tradeOfferId;
+
+    const originalDetail = await request(app)
+      .get(`/trade/offers/${offerId}`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(originalDetail.status).toBe(200);
+    expect(originalDetail.body.data.counterOf).toBeNull();
+    expect(originalDetail.body.data.counters).toHaveLength(1);
+    expect(originalDetail.body.data.counters[0].id).toBe(counterId);
+    expect(originalDetail.body.data.counters[0].status).toBe("PENDING");
+
+    const counterDetail = await request(app)
+      .get(`/trade/offers/${counterId}`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(counterDetail.status).toBe(200);
+    expect(counterDetail.body.data.counterOf).not.toBeNull();
+    expect(counterDetail.body.data.counterOf.id).toBe(offerId);
+    expect(counterDetail.body.data.counters).toHaveLength(0);
+  });
+
+  it("GET /trade/offers/:id returns lastMessage and unreadCount", async () => {
+    const offerId = await createOffer();
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hello" });
+
+    const res = await request(app)
+      .get(`/trade/offers/${offerId}`)
+      .set("Authorization", `Bearer ${receiverToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.lastMessage).not.toBeNull();
+    expect(res.body.data.lastMessage.body).toBe("Hello");
+    expect(res.body.data.unreadCount).toBe(1);
+  });
+
+  it("GET /trade/offers/:id returns 403 for non-participant", async () => {
+    const offerId = await createOffer();
+    const thirdToken = makeToken("third-party");
+
+    const res = await request(app)
+      .get(`/trade/offers/${offerId}`)
+      .set("Authorization", `Bearer ${thirdToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("FORBIDDEN");
+  });
+
   // ─── List ─────────────────────────────────────────────────────
 
   it("GET /trade/offers?type=sent returns creator's offers", async () => {
@@ -431,5 +488,290 @@ describe("Trade", () => {
     expect(receivedByCreator.status).toBe(200);
     const receivedIds = receivedByCreator.body.data.items.map((o: { id: string }) => o.id);
     expect(receivedIds).toContain(counterId);
+  });
+
+  // ─── Trade messages ─────────────────────────────────────────
+
+  it("participant can POST message and get 201 with message persisted", async () => {
+    const offerId = await createOffer();
+
+    const res = await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hello, can we swap the LP for NM?" });
+    expect(res.status).toBe(201);
+    expect(res.body.data.message).toBeDefined();
+    expect(res.body.data.message.body).toBe("Hello, can we swap the LP for NM?");
+    expect(res.body.data.message.senderUserId).toBe(CREATOR);
+    expect(res.body.data.message.tradeOfferId).toBe(offerId);
+
+    const inDb = await prisma.tradeMessage.findFirst({
+      where: { tradeOfferId: offerId },
+    });
+    expect(inDb).not.toBeNull();
+    expect(inDb!.body).toBe("Hello, can we swap the LP for NM?");
+    expect(inDb!.senderUserId).toBe(CREATOR);
+  });
+
+  it("participant can GET messages list and pagination works", async () => {
+    const offerId = await createOffer();
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "First" });
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${receiverToken}`)
+      .send({ body: "Second" });
+
+    const res = await request(app)
+      .get(`/trade/offers/${offerId}/messages?limit=10`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toHaveLength(2);
+    expect(res.body.data.items[0].body).toBe("First");
+    expect(res.body.data.items[1].body).toBe("Second");
+    expect(res.body.data.nextCursor).toBeNull();
+
+    const page1 = await request(app)
+      .get(`/trade/offers/${offerId}/messages?limit=1`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(page1.status).toBe(200);
+    expect(page1.body.data.items).toHaveLength(1);
+    expect(page1.body.data.nextCursor).not.toBeNull();
+    const res2 = await request(app)
+      .get(`/trade/offers/${offerId}/messages?limit=5&cursor=${page1.body.data.nextCursor}`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res2.status).toBe(200);
+    expect(res2.body.data.items).toHaveLength(1);
+  });
+
+  it("403 if non-participant tries POST or GET messages", async () => {
+    const offerId = await createOffer();
+    const thirdToken = makeToken("third-party");
+
+    const postRes = await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${thirdToken}`)
+      .send({ body: "Hi" });
+    expect(postRes.status).toBe(403);
+    expect(postRes.body.error?.code).toBe("FORBIDDEN");
+
+    const getRes = await request(app)
+      .get(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${thirdToken}`);
+    expect(getRes.status).toBe(403);
+    expect(getRes.body.error?.code).toBe("FORBIDDEN");
+  });
+
+  it("404 if offer not found for messages", async () => {
+    const postRes = await request(app)
+      .post("/trade/offers/nonexistent-id/messages")
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hi" });
+    expect(postRes.status).toBe(404);
+
+    const getRes = await request(app)
+      .get("/trade/offers/nonexistent-id/messages")
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(getRes.status).toBe(404);
+  });
+
+  it("409 if offer expired / cancelled / rejected for messages", async () => {
+    const offerId = await createOffer();
+    await request(app)
+      .post(`/trade/offers/${offerId}/reject`)
+      .set("Authorization", `Bearer ${receiverToken}`);
+
+    const postRes = await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hi" });
+    expect(postRes.status).toBe(409);
+    expect(postRes.body.error?.code).toBe("INVALID_STATE");
+
+    const getRes = await request(app)
+      .get(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(getRes.status).toBe(409);
+    expect(getRes.body.error?.code).toBe("INVALID_STATE");
+  });
+
+  it("409 OFFER_EXPIRED when offer expired for messages", async () => {
+    const offer = await prisma.tradeOffer.create({
+      data: {
+        creatorUserId: CREATOR,
+        receiverUserId: RECEIVER,
+        creatorItemsJson: { schemaVersion: 1 },
+        receiverItemsJson: { schemaVersion: 1 },
+        status: "PENDING",
+        expiresAt: new Date("2020-01-01"),
+      },
+    });
+    await prisma.tradeEvent.create({
+      data: {
+        tradeOfferId: offer.id,
+        type: "CREATED",
+        actorUserId: CREATOR,
+      },
+    });
+
+    const res = await request(app)
+      .post(`/trade/offers/${offer.id}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hi" });
+    expect(res.status).toBe(409);
+    expect(res.body.error?.code).toBe("OFFER_EXPIRED");
+  });
+
+  // ─── Trade Inbox (unreadCount + lastMessage) ──────────────────
+
+  it("GET offers returns unreadCount 0 and lastMessage null initially", async () => {
+    const offerId = await createOffer();
+
+    const res = await request(app)
+      .get("/trade/offers?type=received&limit=10")
+      .set("Authorization", `Bearer ${receiverToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.items).toHaveLength(1);
+    expect(res.body.data.items[0].unreadCount).toBe(0);
+    expect(res.body.data.items[0].lastMessage).toBeNull();
+  });
+
+  it("A sends message => B sees unreadCount 1 and lastMessage", async () => {
+    const offerId = await createOffer();
+
+    const postRes = await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hello from creator" });
+    expect(postRes.status).toBe(201);
+
+    const res = await request(app)
+      .get("/trade/offers?type=received&limit=10")
+      .set("Authorization", `Bearer ${receiverToken}`);
+    expect(res.status).toBe(200);
+    const offer = res.body.data.items.find((o: { id: string }) => o.id === offerId);
+    expect(offer).toBeDefined();
+    expect(offer.unreadCount).toBe(1);
+    expect(offer.lastMessage).not.toBeNull();
+    expect(offer.lastMessage.body).toBe("Hello from creator");
+    expect(offer.lastMessage.senderUserId).toBe(CREATOR);
+  });
+
+  it("B reads messages => unreadCount becomes 0", async () => {
+    const offerId = await createOffer();
+
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Hi" });
+
+    const listBefore = await request(app)
+      .get("/trade/offers?type=received&limit=10")
+      .set("Authorization", `Bearer ${receiverToken}`);
+    expect(listBefore.body.data.items.find((o: { id: string }) => o.id === offerId).unreadCount).toBe(1);
+
+    await request(app)
+      .get(`/trade/offers/${offerId}/messages?limit=10`)
+      .set("Authorization", `Bearer ${receiverToken}`);
+
+    const listAfter = await request(app)
+      .get("/trade/offers?type=received&limit=10")
+      .set("Authorization", `Bearer ${receiverToken}`);
+    expect(listAfter.body.data.items.find((o: { id: string }) => o.id === offerId).unreadCount).toBe(0);
+  });
+
+  it("lastMessage matches latest message in thread", async () => {
+    const offerId = await createOffer();
+
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "First" });
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${receiverToken}`)
+      .send({ body: "Second" });
+    await request(app)
+      .post(`/trade/offers/${offerId}/messages`)
+      .set("Authorization", `Bearer ${creatorToken}`)
+      .send({ body: "Third" });
+
+    const res = await request(app)
+      .get("/trade/offers?type=received&limit=10")
+      .set("Authorization", `Bearer ${receiverToken}`);
+    const offer = res.body.data.items.find((o: { id: string }) => o.id === offerId);
+    expect(offer.lastMessage.body).toBe("Third");
+    expect(offer.lastMessage.senderUserId).toBe(CREATOR);
+  });
+
+  // ─── POST /trade/offers/:id/read ───────────────────────────────
+
+  it("POST /trade/offers/:id/read returns 200 for participant", async () => {
+    const offerId = await createOffer();
+
+    const res = await request(app)
+      .post(`/trade/offers/${offerId}/read`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.ok).toBe(true);
+  });
+
+  it("POST /trade/offers/:id/read returns 403 for non-participant", async () => {
+    const offerId = await createOffer();
+    const thirdToken = makeToken("third-party");
+
+    const res = await request(app)
+      .post(`/trade/offers/${offerId}/read`)
+      .set("Authorization", `Bearer ${thirdToken}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error?.code).toBe("FORBIDDEN");
+  });
+
+  it("POST /trade/offers/:id/read returns 404 if not found", async () => {
+    const res = await request(app)
+      .post("/trade/offers/nonexistent-id/read")
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /trade/offers/:id/read returns 409 for invalid state (rejected)", async () => {
+    const offerId = await createOffer();
+    await request(app)
+      .post(`/trade/offers/${offerId}/reject`)
+      .set("Authorization", `Bearer ${receiverToken}`);
+
+    const res = await request(app)
+      .post(`/trade/offers/${offerId}/read`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error?.code).toBe("INVALID_STATE");
+  });
+
+  it("POST /trade/offers/:id/read returns 409 when offer expired", async () => {
+    const offer = await prisma.tradeOffer.create({
+      data: {
+        creatorUserId: CREATOR,
+        receiverUserId: RECEIVER,
+        creatorItemsJson: { schemaVersion: 1 },
+        receiverItemsJson: { schemaVersion: 1 },
+        status: "PENDING",
+        expiresAt: new Date("2020-01-01"),
+      },
+    });
+    await prisma.tradeEvent.create({
+      data: {
+        tradeOfferId: offer.id,
+        type: "CREATED",
+        actorUserId: CREATOR,
+      },
+    });
+
+    const res = await request(app)
+      .post(`/trade/offers/${offer.id}/read`)
+      .set("Authorization", `Bearer ${creatorToken}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error?.code).toBe("OFFER_EXPIRED");
   });
 });

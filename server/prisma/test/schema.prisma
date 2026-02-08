@@ -28,6 +28,7 @@ model Listing {
   priceCents     Int
   currency       String         @default("EUR")
   status         ListingStatus  @default(DRAFT)
+  isHidden       Boolean        @default(false)
   publishedAt    DateTime?
   soldAt         DateTime?
   createdAt      DateTime      @default(now())
@@ -37,6 +38,7 @@ model Listing {
   handovers      Handover[]
   images         ListingImage[]
   favorites      Favorite[]
+  reports        ListingReport[]
 
   @@index([userId])
   @@index([status, createdAt])
@@ -46,6 +48,7 @@ model Listing {
   @@index([game, language, condition])
   @@index([cardId])
   @@index([setCode])
+  @@index([isHidden])
 }
 
 enum ListingCategory {
@@ -148,6 +151,9 @@ model UserCollection {
   condition CardCondition
   quantity  Int           @default(1)
   isPublic  Boolean       @default(false)
+  acquiredAt             DateTime?
+  acquisitionPriceCents Int?
+  acquisitionCurrency   String?   @default("EUR")
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
@@ -172,6 +178,8 @@ model TradeOffer {
   updatedAt           DateTime         @updatedAt
 
   events              TradeEvent[]
+  messages            TradeMessage[]
+  readStates          TradeReadState[]
   handovers           Handover[]
   counterOf           TradeOffer?       @relation("CounterOffer", fields: [counterOfOfferId], references: [id], onDelete: SetNull)
   counters            TradeOffer[]     @relation("CounterOffer")
@@ -211,6 +219,32 @@ enum TradeEventType {
   CANCELLED
   EXPIRED
   COUNTERED
+}
+
+model TradeMessage {
+  id            String     @id @default(cuid())
+  tradeOfferId  String
+  senderUserId  String
+  body          String
+  createdAt     DateTime   @default(now())
+
+  tradeOffer TradeOffer @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+
+  @@index([tradeOfferId, createdAt, id])
+}
+
+model TradeReadState {
+  id            String     @id @default(cuid())
+  tradeOfferId  String
+  userId        String
+  lastReadAt    DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  tradeOffer TradeOffer @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+
+  @@unique([tradeOfferId, userId])
+  @@index([userId, updatedAt])
 }
 
 // --- User Profile (local cache) ---
@@ -298,4 +332,128 @@ enum HandoverStatus {
   PENDING_VERIFICATION
   VERIFIED
   REJECTED
+}
+
+// --- Trust / Moderation ---
+
+model ListingReport {
+  id              String             @id @default(cuid())
+  listingId       String
+  reporterUserId  String
+  reason          String
+  details         String?
+  status          ListingReportStatus @default(OPEN)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, status, createdAt])
+  @@index([reporterUserId, createdAt])
+}
+
+enum ListingReportStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
+model ModerationAction {
+  id          String               @id @default(cuid())
+  targetType  ModerationTargetType
+  targetId    String
+  actionType  ModerationActionType
+  note        String?
+  actorUserId String
+  createdAt   DateTime             @default(now())
+
+  @@index([targetType, targetId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+enum ModerationTargetType {
+  LISTING
+  USER
+  TRADE
+}
+
+enum ModerationActionType {
+  HIDE
+  UNHIDE
+  WARN
+  BAN
+  UNBAN
+  NOTE
+}
+
+model UserModerationState {
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  isBanned   Boolean   @default(false)
+  banReason  String?
+  bannedAt   DateTime?
+  warnCount  Int       @default(0)
+  lastWarnAt DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@index([isBanned])
+  @@index([warnCount])
+}
+
+model SellerReputation {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  score          Int      @default(0)
+  totalSales     Int      @default(0)
+  totalTrades    Int      @default(0)
+  disputesCount  Int      @default(0)
+  reportsCount   Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@index([score])
+}
+
+// --- Pricing + Portfolio (external market data) ---
+
+enum PriceSource {
+  CARDMARKET
+  TCGPLAYER
+}
+
+model ExternalProductRef {
+  id                 String      @id @default(cuid())
+  source             PriceSource
+  game               Game
+  cardId             String
+  language           Language?
+  externalProductId  String
+  createdAt          DateTime    @default(now())
+
+  @@unique([source, externalProductId])
+  @@index([cardId, language])
+}
+
+model CardPriceSnapshot {
+  id                String      @id @default(cuid())
+  source            PriceSource
+  externalProductId String
+  currency          String      @default("EUR")
+  trendCents        Int
+  avgCents          Int?
+  lowCents          Int?
+  capturedAt        DateTime    @default(now())
+
+  @@index([externalProductId, capturedAt])
+  @@index([source, capturedAt])
+}
+
+model UserPortfolioSnapshot {
+  id              String   @id @default(cuid())
+  userId          String
+  totalValueCents Int
+  totalCostCents  Int
+  pnlCents        Int
+  capturedAt      DateTime @default(now())
+
+  @@index([userId, capturedAt])
 }

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma, Language, CardCondition } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
@@ -25,6 +26,9 @@ const upsertCollectionItemSchema = z.object({
   condition: z.nativeEnum(CardCondition),
   quantity: z.number().int().min(1),
   isPublic: z.boolean().optional(),
+  acquiredAt: z.coerce.date().optional(),
+  acquisitionPriceCents: z.number().int().min(0).optional(),
+  acquisitionCurrency: z.string().max(3).optional(),
 });
 
 const deleteCollectionItemSchema = z.object({
@@ -174,6 +178,7 @@ router.get(
 router.put(
   "/collection/items",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const body = upsertCollectionItemSchema.parse(req.body);
@@ -193,6 +198,13 @@ router.put(
         ...(body.cardName !== undefined ? { cardName: body.cardName } : {}),
         ...(body.setCode !== undefined ? { setCode: body.setCode } : {}),
         ...(body.isPublic !== undefined ? { isPublic: body.isPublic } : {}),
+        ...(body.acquiredAt !== undefined ? { acquiredAt: body.acquiredAt } : {}),
+        ...(body.acquisitionPriceCents !== undefined
+          ? { acquisitionPriceCents: body.acquisitionPriceCents }
+          : {}),
+        ...(body.acquisitionCurrency !== undefined
+          ? { acquisitionCurrency: body.acquisitionCurrency }
+          : {}),
       },
       create: {
         userId,
@@ -203,6 +215,9 @@ router.put(
         condition: body.condition,
         quantity: body.quantity,
         isPublic: body.isPublic ?? false,
+        acquiredAt: body.acquiredAt ?? null,
+        acquisitionPriceCents: body.acquisitionPriceCents ?? null,
+        acquisitionCurrency: body.acquisitionCurrency ?? "EUR",
       },
     });
 
@@ -214,6 +229,7 @@ router.put(
 router.delete(
   "/collection/items",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const body = deleteCollectionItemSchema.parse(req.body);

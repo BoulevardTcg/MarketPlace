@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma, TradeOfferStatus, TradeEventType } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
@@ -115,6 +116,14 @@ const tradeOffersQuerySchema = paginationQuerySchema.extend({
   status: z.nativeEnum(TradeOfferStatus).optional(),
 });
 
+const postMessageBodySchema = z.object({
+  body: z.string().min(1, "body is required").max(2000, "body must be at most 2000 characters"),
+});
+
+const messagesQuerySchema = paginationQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
 const counterOfferBodySchema = z.object({
   creatorItemsJson: z
     .record(z.unknown())
@@ -149,6 +158,7 @@ router.get("/trade/ping", (_req, res) => {
 router.post(
   "/trade/offers",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const body = createTradeOfferBodySchema.parse(req.body);
     const creatorUserId = (req as RequestWithUser).user.userId;
@@ -225,9 +235,32 @@ router.get(
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: limit + 1,
+      include: {
+        messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] },
+        readStates: { where: { userId } },
+      },
     });
 
-    const page = buildPage(items, limit, (item) => ({
+    const epoch = new Date(0);
+    const enriched = items.map((offer) => {
+      const lastReadAt = offer.readStates[0]?.lastReadAt ?? null;
+      const unreadCount = offer.messages.filter(
+        (m) =>
+          m.senderUserId !== userId &&
+          (lastReadAt ? m.createdAt > lastReadAt : true),
+      ).length;
+      const lastMessage = offer.messages[0] ?? null;
+      const { messages: _m, readStates: _r, ...rest } = offer;
+      return {
+        ...rest,
+        lastMessage: lastMessage
+          ? { id: lastMessage.id, body: lastMessage.body, createdAt: lastMessage.createdAt, senderUserId: lastMessage.senderUserId }
+          : null,
+        unreadCount,
+      };
+    });
+
+    const page = buildPage(enriched, limit, (item) => ({
       v: item.createdAt.toISOString(),
       id: item.id,
     }));
@@ -236,7 +269,7 @@ router.get(
   }),
 );
 
-// GET /trade/offers/:id — detail (creator or receiver only)
+// GET /trade/offers/:id — detail (creator or receiver only); includes counterOf, counters, lastMessage, unreadCount
 router.get(
   "/trade/offers/:id",
   requireAuth,
@@ -260,15 +293,40 @@ router.get(
     // Lazy-expire if needed
     await markExpiredIfNeeded(offer);
 
-    // Re-fetch with events (status may have changed)
+    // Re-fetch with events, counterOf, counters, messages, readStates
     const result = await prisma.tradeOffer.findUnique({
       where: { id: offerId },
-      include: { events: { orderBy: { createdAt: "asc" } } },
+      include: {
+        events: { orderBy: { createdAt: "asc" } },
+        counterOf: { select: { id: true, status: true, createdAt: true } },
+        counters: { orderBy: { createdAt: "asc" }, select: { id: true, status: true, createdAt: true } },
+        messages: { orderBy: [{ createdAt: "desc" }, { id: "desc" }] },
+        readStates: { where: { userId } },
+      },
     });
     if (!result)
       throw new AppError("NOT_FOUND", "Trade offer not found", 404);
 
-    ok(res, result);
+    const counterOf = result.counterOf
+      ? { id: result.counterOf.id, status: result.counterOf.status, createdAt: result.counterOf.createdAt }
+      : null;
+    const counters = result.counters.map((c) => ({ id: c.id, status: c.status, createdAt: c.createdAt }));
+    const lastReadAt = result.readStates[0]?.lastReadAt ?? null;
+    const unreadCount = result.messages.filter(
+      (m) => m.senderUserId !== userId && (lastReadAt ? m.createdAt > lastReadAt : true),
+    ).length;
+    const lastMessage = result.messages[0]
+      ? { id: result.messages[0].id, body: result.messages[0].body, createdAt: result.messages[0].createdAt, senderUserId: result.messages[0].senderUserId }
+      : null;
+
+    const { messages: _m, readStates: _r, counterOf: _co, counters: _cs, ...rest } = result;
+    ok(res, {
+      ...rest,
+      counterOf,
+      counters,
+      lastMessage,
+      unreadCount,
+    });
   }),
 );
 
@@ -276,6 +334,7 @@ router.get(
 router.post(
   "/trade/offers/:id/accept",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const offerId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -418,6 +477,7 @@ router.post(
 router.post(
   "/trade/offers/:id/reject",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const offerId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -473,6 +533,7 @@ router.post(
 router.post(
   "/trade/offers/:id/counter",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const originalOfferId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -542,6 +603,7 @@ router.post(
 router.post(
   "/trade/offers/:id/cancel",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const offerId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -590,6 +652,212 @@ router.post(
     });
 
     ok(res, { ok: true });
+  }),
+);
+
+// POST /trade/offers/:id/read — creator or receiver only; mark thread as read (PENDING or ACCEPTED only)
+router.post(
+  "/trade/offers/:id/read",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const offerId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+
+    const offer = await prisma.tradeOffer.findUnique({
+      where: { id: offerId },
+    });
+    if (!offer)
+      throw new AppError("NOT_FOUND", "Trade offer not found", 404);
+    if (offer.creatorUserId !== userId && offer.receiverUserId !== userId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only the creator or receiver can mark this offer as read",
+        403,
+      );
+    }
+
+    const afterExpiry = await markExpiredIfNeeded(offer);
+    if (afterExpiry.status === TradeOfferStatus.EXPIRED) {
+      throw new AppError("OFFER_EXPIRED", "Trade offer has expired", 409);
+    }
+    if (
+      afterExpiry.status === TradeOfferStatus.REJECTED ||
+      afterExpiry.status === TradeOfferStatus.CANCELLED
+    ) {
+      throw new AppError(
+        "INVALID_STATE",
+        `Cannot mark as read (offer status: ${afterExpiry.status})`,
+        409,
+      );
+    }
+
+    const latestInThread = await prisma.tradeMessage.findFirst({
+      where: { tradeOfferId: offerId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { createdAt: true },
+    });
+    const lastReadAt = latestInThread?.createdAt ?? new Date();
+
+    await prisma.tradeReadState.upsert({
+      where: {
+        tradeOfferId_userId: { tradeOfferId: offerId, userId },
+      },
+      create: {
+        tradeOfferId: offerId,
+        userId,
+        lastReadAt,
+      },
+      update: { lastReadAt, updatedAt: new Date() },
+    });
+
+    ok(res, { ok: true });
+  }),
+);
+
+// POST /trade/offers/:id/messages — creator or receiver only; offer must be PENDING or ACCEPTED
+router.post(
+  "/trade/offers/:id/messages",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const offerId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    const body = postMessageBodySchema.parse(req.body ?? {});
+
+    const offer = await prisma.tradeOffer.findUnique({
+      where: { id: offerId },
+    });
+    if (!offer)
+      throw new AppError("NOT_FOUND", "Trade offer not found", 404);
+    if (offer.creatorUserId !== userId && offer.receiverUserId !== userId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only the creator or receiver can send messages on this offer",
+        403,
+      );
+    }
+
+    const afterExpiry = await markExpiredIfNeeded(offer);
+    if (afterExpiry.status === TradeOfferStatus.EXPIRED) {
+      throw new AppError("OFFER_EXPIRED", "Trade offer has expired", 409);
+    }
+    if (
+      afterExpiry.status === TradeOfferStatus.REJECTED ||
+      afterExpiry.status === TradeOfferStatus.CANCELLED
+    ) {
+      throw new AppError(
+        "INVALID_STATE",
+        `Cannot send messages (offer status: ${afterExpiry.status})`,
+        409,
+      );
+    }
+
+    const message = await prisma.$transaction(async (tx) => {
+      const msg = await tx.tradeMessage.create({
+        data: {
+          tradeOfferId: offerId,
+          senderUserId: userId,
+          body: body.body,
+        },
+      });
+      await tx.tradeReadState.upsert({
+        where: {
+          tradeOfferId_userId: { tradeOfferId: offerId, userId },
+        },
+        create: {
+          tradeOfferId: offerId,
+          userId,
+          lastReadAt: msg.createdAt,
+        },
+        update: { lastReadAt: msg.createdAt, updatedAt: new Date() },
+      });
+      return msg;
+    });
+
+    ok(res, { message }, 201);
+  }),
+);
+
+// GET /trade/offers/:id/messages — creator or receiver only; cursor pagination, sort by createdAt asc, id asc
+router.get(
+  "/trade/offers/:id/messages",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const offerId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    const query = messagesQuerySchema.parse(req.query);
+    const { cursor, limit } = query;
+
+    const offer = await prisma.tradeOffer.findUnique({
+      where: { id: offerId },
+    });
+    if (!offer)
+      throw new AppError("NOT_FOUND", "Trade offer not found", 404);
+    if (offer.creatorUserId !== userId && offer.receiverUserId !== userId) {
+      throw new AppError(
+        "FORBIDDEN",
+        "Only the creator or receiver can read messages on this offer",
+        403,
+      );
+    }
+
+    const afterExpiry = await markExpiredIfNeeded(offer);
+    if (afterExpiry.status === TradeOfferStatus.EXPIRED) {
+      throw new AppError("OFFER_EXPIRED", "Trade offer has expired", 409);
+    }
+    if (
+      afterExpiry.status === TradeOfferStatus.REJECTED ||
+      afterExpiry.status === TradeOfferStatus.CANCELLED
+    ) {
+      throw new AppError(
+        "INVALID_STATE",
+        `Cannot read messages (offer status: ${afterExpiry.status})`,
+        409,
+      );
+    }
+
+    const where: Prisma.TradeMessageWhereInput = { tradeOfferId: offerId };
+    if (cursor) {
+      const c = decodeCursor(cursor);
+      const cursorDate = new Date(c.createdAt as string);
+      const cursorId = c.id as string;
+      where.OR = [
+        { createdAt: { gt: cursorDate } },
+        { createdAt: cursorDate, id: { gt: cursorId } },
+      ];
+    }
+
+    const items = await prisma.tradeMessage.findMany({
+      where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
+    });
+
+    const latestInThread = await prisma.tradeMessage.findFirst({
+      where: { tradeOfferId: offerId },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { createdAt: true },
+    });
+    const lastReadAt = latestInThread?.createdAt ?? new Date();
+    await prisma.tradeReadState.upsert({
+      where: {
+        tradeOfferId_userId: { tradeOfferId: offerId, userId },
+      },
+      create: {
+        tradeOfferId: offerId,
+        userId,
+        lastReadAt,
+      },
+      update: { lastReadAt, updatedAt: new Date() },
+    });
+
+    const page = buildPage(items, limit, (item) => ({
+      createdAt: item.createdAt.toISOString(),
+      id: item.id,
+    }));
+
+    ok(res, page);
   }),
 );
 

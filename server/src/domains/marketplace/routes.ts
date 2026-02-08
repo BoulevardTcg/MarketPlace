@@ -8,8 +8,10 @@ import {
   CardCondition,
   ListingStatus,
   ListingEventType,
+  PriceSource,
 } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import {
   optionalAuth,
   type RequestWithOptionalUser,
@@ -91,6 +93,57 @@ const myListingsQuerySchema = paginationQuerySchema.extend({
   sort: z.enum(["date_desc", "date_asc"]).default("date_desc"),
 });
 
+// ─── Market price enrichment ──────────────────────────────────
+
+type ListingWithPrice = {
+  id: string;
+  cardId: string | null;
+  language: Language;
+  priceCents: number;
+  [k: string]: unknown;
+};
+
+async function enrichListingsWithMarketPrice<T extends ListingWithPrice>(
+  listings: T[],
+): Promise<(T & { marketPriceCents: number | null; deltaCents: number | null })[]> {
+  if (listings.length === 0) return [];
+  const pairs = new Map<string, { cardId: string; language: Language }>();
+  for (const l of listings) {
+    if (l.cardId) pairs.set(`${l.cardId}:${l.language}`, { cardId: l.cardId, language: l.language });
+  }
+  if (pairs.size === 0) {
+    return listings.map((l) => ({ ...l, marketPriceCents: null, deltaCents: null }));
+  }
+  const refs = await prisma.externalProductRef.findMany({
+    where: {
+      source: PriceSource.CARDMARKET,
+      OR: [...pairs.values()].map((p) => ({ cardId: p.cardId, language: p.language })),
+    },
+  });
+  const refByKey = new Map(refs.map((r) => [`${r.cardId}:${r.language ?? ""}`, r]));
+  const externalIds = [...new Set(refs.map((r) => r.externalProductId))];
+  const latestSnapshots = await Promise.all(
+    externalIds.map((externalProductId) =>
+      prisma.cardPriceSnapshot.findFirst({
+        where: { externalProductId, source: PriceSource.CARDMARKET },
+        orderBy: { capturedAt: "desc" },
+      }),
+    ),
+  );
+  const snapshotByExternalId = new Map(
+    externalIds.map((id, i) => [id, latestSnapshots[i]]),
+  );
+  return listings.map((l) => {
+    const key = l.cardId ? `${l.cardId}:${l.language}` : "";
+    const ref = key ? refByKey.get(key) : null;
+    const snapshot = ref ? snapshotByExternalId.get(ref.externalProductId) ?? null : null;
+    const marketPriceCents = snapshot?.trendCents ?? null;
+    const deltaCents =
+      marketPriceCents != null ? l.priceCents - marketPriceCents : null;
+    return { ...l, marketPriceCents, deltaCents };
+  });
+}
+
 // ─── Sort Config ──────────────────────────────────────────────
 
 const SORT_CONFIGS = {
@@ -129,6 +182,7 @@ router.get(
 
     const where: Prisma.ListingWhereInput = {
       status: ListingStatus.PUBLISHED,
+      isHidden: false,
     };
 
     if (game) where.game = game;
@@ -203,6 +257,7 @@ router.get(
       id: item.id,
     }));
 
+    page.items = await enrichListingsWithMarketPrice(page.items);
     ok(res, page);
   }),
 );
@@ -220,11 +275,17 @@ router.get(
     });
     if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
 
-    if (listing.status !== ListingStatus.PUBLISHED && listing.userId !== userId) {
+    const isOwner = listing.userId === userId;
+    if (listing.status !== ListingStatus.PUBLISHED && !isOwner) {
+      throw new AppError("NOT_FOUND", "Listing not found", 404);
+    }
+    // Hidden listings are invisible to non-owners
+    if (listing.isHidden && !isOwner) {
       throw new AppError("NOT_FOUND", "Listing not found", 404);
     }
 
-    ok(res, listing);
+    const [enriched] = await enrichListingsWithMarketPrice([listing]);
+    ok(res, enriched);
   }),
 );
 
@@ -276,8 +337,9 @@ router.get(
 router.post(
   "/marketplace/listings",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
-    const body = createListingBodySchema.parse(req.body);
+    const body = createListingBodySchema.parse(req.body ?? {});
     const userId = (req as RequestWithUser).user.userId;
 
     const result = await prisma.$transaction(async (tx) => {
@@ -322,10 +384,11 @@ router.post(
 router.patch(
   "/marketplace/listings/:id",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
-    const body = updateListingBodySchema.parse(req.body);
+    const body = updateListingBodySchema.parse(req.body ?? {});
 
     const listing = await prisma.listing.findUnique({
       where: { id: listingId },
@@ -370,6 +433,7 @@ router.patch(
 router.post(
   "/marketplace/listings/:id/publish",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -424,6 +488,7 @@ router.post(
 router.post(
   "/marketplace/listings/:id/archive",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -484,6 +549,7 @@ router.post(
 router.post(
   "/marketplace/listings/:id/mark-sold",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -568,6 +634,7 @@ router.post(
 router.post(
   "/marketplace/listings/:id/favorite",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -684,6 +751,7 @@ async function getListingAsOwner(
 router.post(
   "/marketplace/listings/:id/images/presigned-upload",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
@@ -721,11 +789,12 @@ router.post(
 router.post(
   "/marketplace/listings/:id/images/attach",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
     await getListingAsOwner(listingId, userId);
-    const body = attachImageBodySchema.parse(req.body);
+    const body = attachImageBodySchema.parse(req.body ?? {});
 
     const count = await prisma.listingImage.count({ where: { listingId } });
     if (count >= MAX_IMAGES_PER_LISTING) {
@@ -761,13 +830,13 @@ router.get(
     const listingId = req.params.id;
     const listing = await prisma.listing.findUnique({
       where: { id: listingId },
-      select: { userId: true, status: true },
+      select: { userId: true, status: true, isHidden: true },
     });
     if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
 
     const userId = (req as RequestWithOptionalUser).user?.userId;
     const isOwner = userId === listing.userId;
-    const isPublic = listing.status === ListingStatus.PUBLISHED;
+    const isPublic = listing.status === ListingStatus.PUBLISHED && !listing.isHidden;
     if (!isOwner && !isPublic) {
       throw new AppError("NOT_FOUND", "Listing not found", 404);
     }
@@ -784,6 +853,7 @@ router.get(
 router.delete(
   "/marketplace/listings/:id/images/:imageId",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const { id: listingId, imageId } = req.params;
     const userId = (req as RequestWithUser).user.userId;
@@ -804,11 +874,12 @@ router.delete(
 router.patch(
   "/marketplace/listings/:id/images/reorder",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const listingId = req.params.id;
     const userId = (req as RequestWithUser).user.userId;
     await getListingAsOwner(listingId, userId);
-    const body = reorderImagesBodySchema.parse(req.body);
+    const body = reorderImagesBodySchema.parse(req.body ?? {});
 
     const images = await prisma.listingImage.findMany({
       where: { listingId },

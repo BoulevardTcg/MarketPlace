@@ -1,9 +1,11 @@
 import type { PrismaClient as PrismaClientType } from "@prisma/client";
 import { createRequire } from "node:module";
+import { env } from "../config/env.js";
 
 const require = createRequire(import.meta.url);
+const useSqlite = env.DATABASE_URL.startsWith("file:");
 const PrismaClientCtor: typeof import("@prisma/client").PrismaClient =
-  process.env.NODE_ENV === "test"
+  process.env.NODE_ENV === "test" || useSqlite
     ? require("../../test/prisma-client").PrismaClient
     : require("@prisma/client").PrismaClient;
 

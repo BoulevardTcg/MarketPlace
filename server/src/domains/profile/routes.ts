@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
@@ -44,6 +45,7 @@ router.get(
 router.patch(
   "/users/me/profile",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const body = patchProfileSchema.parse(req.body);

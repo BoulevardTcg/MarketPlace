@@ -4,6 +4,7 @@ import app from "../../app.js";
 import jwt from "jsonwebtoken";
 import { prisma } from "../../shared/db/prisma.js";
 import { resetDb } from "../../test/db.js";
+import { PriceSource } from "@prisma/client";
 
 const secret = process.env.JWT_SECRET ?? "test-jwt-secret";
 const makeToken = (userId: string) =>
@@ -258,6 +259,100 @@ describe("Marketplace", () => {
         .get(`/marketplace/listings/${id}`)
         .set("Authorization", `Bearer ${otherToken}`);
       expect(res3.status).toBe(404);
+    });
+  });
+
+  // ─── Market price enrichment ───────────────────────────────────
+
+  describe("Market price enrichment", () => {
+    it("GET /marketplace/listings includes marketPriceCents and deltaCents when snapshot exists", async () => {
+      const token = makeToken("seller-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Card with price",
+          priceCents: 1200,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+          cardId: "card-priced",
+        });
+      const listingId = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      await prisma.externalProductRef.create({
+        data: {
+          source: PriceSource.CARDMARKET,
+          game: "POKEMON",
+          cardId: "card-priced",
+          language: "FR",
+          externalProductId: "ext-priced",
+        },
+      });
+      await prisma.cardPriceSnapshot.create({
+        data: {
+          source: PriceSource.CARDMARKET,
+          externalProductId: "ext-priced",
+          trendCents: 1000,
+          avgCents: 1050,
+          lowCents: 950,
+        },
+      });
+
+      const browse = await request(app).get("/marketplace/listings");
+      expect(browse.status).toBe(200);
+      const item = browse.body.data.items.find(
+        (i: { id: string }) => i.id === listingId,
+      );
+      expect(item).toBeDefined();
+      expect(item.marketPriceCents).toBe(1000);
+      expect(item.deltaCents).toBe(1200 - 1000); // 200
+    });
+
+    it("GET /marketplace/listings/:id includes marketPriceCents when snapshot exists", async () => {
+      const token = makeToken("owner-1");
+      const createRes = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Single card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "EN",
+          condition: "NM",
+          cardId: "card-single",
+        });
+      const listingId = createRes.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${listingId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      await prisma.externalProductRef.create({
+        data: {
+          source: PriceSource.CARDMARKET,
+          game: "POKEMON",
+          cardId: "card-single",
+          language: "EN",
+          externalProductId: "ext-single",
+        },
+      });
+      await prisma.cardPriceSnapshot.create({
+        data: {
+          source: PriceSource.CARDMARKET,
+          externalProductId: "ext-single",
+          trendCents: 450,
+        },
+      });
+
+      const res = await request(app).get(`/marketplace/listings/${listingId}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.marketPriceCents).toBe(450);
+      expect(res.body.data.deltaCents).toBe(500 - 450); // 50
     });
   });
 
@@ -803,6 +898,129 @@ describe("Marketplace", () => {
       expect(reorderRes.status).toBe(200);
       expect(reorderRes.body.data.items[0].id).toBe(idB);
       expect(reorderRes.body.data.items[1].id).toBe(idA);
+    });
+  });
+
+  describe("Hidden listings (isHidden)", () => {
+    it("hidden PUBLISHED listing does not appear in browse", async () => {
+      const token = makeToken("seller-1");
+      const res1 = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Visible card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const visibleId = res1.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${visibleId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+
+      const res2 = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Hidden card",
+          priceCents: 600,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const hiddenId = res2.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${hiddenId}/publish`)
+        .set("Authorization", `Bearer ${token}`);
+      await prisma.listing.update({ where: { id: hiddenId }, data: { isHidden: true } });
+
+      const browse = await request(app).get("/marketplace/listings");
+      expect(browse.status).toBe(200);
+      expect(browse.body.data.items).toHaveLength(1);
+      expect(browse.body.data.items[0].id).toBe(visibleId);
+    });
+
+    it("GET /marketplace/listings/:id returns 404 for hidden listing (non-owner)", async () => {
+      const ownerToken = makeToken("owner-1");
+      const res1 = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({
+          title: "Hidden card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const id = res1.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${id}/publish`)
+        .set("Authorization", `Bearer ${ownerToken}`);
+      await prisma.listing.update({ where: { id }, data: { isHidden: true } });
+
+      // No auth => 404
+      const res2 = await request(app).get(`/marketplace/listings/${id}`);
+      expect(res2.status).toBe(404);
+
+      // Other user => 404
+      const otherToken = makeToken("other-user");
+      const res3 = await request(app)
+        .get(`/marketplace/listings/${id}`)
+        .set("Authorization", `Bearer ${otherToken}`);
+      expect(res3.status).toBe(404);
+    });
+
+    it("GET /marketplace/listings/:id returns 200 for hidden listing (owner)", async () => {
+      const ownerToken = makeToken("owner-1");
+      const res1 = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({
+          title: "Hidden card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const id = res1.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${id}/publish`)
+        .set("Authorization", `Bearer ${ownerToken}`);
+      await prisma.listing.update({ where: { id }, data: { isHidden: true } });
+
+      const res2 = await request(app)
+        .get(`/marketplace/listings/${id}`)
+        .set("Authorization", `Bearer ${ownerToken}`);
+      expect(res2.status).toBe(200);
+      expect(res2.body.data.isHidden).toBe(true);
+    });
+
+    it("GET /marketplace/listings/:id/images returns 404 for hidden listing (non-owner)", async () => {
+      const ownerToken = makeToken("owner-1");
+      const res1 = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${ownerToken}`)
+        .send({
+          title: "Hidden card",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const id = res1.body.data.listingId;
+      await request(app)
+        .post(`/marketplace/listings/${id}/publish`)
+        .set("Authorization", `Bearer ${ownerToken}`);
+      await prisma.listing.update({ where: { id }, data: { isHidden: true } });
+
+      const res2 = await request(app).get(`/marketplace/listings/${id}/images`);
+      expect(res2.status).toBe(404);
     });
   });
 

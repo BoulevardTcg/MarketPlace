@@ -4,7 +4,18 @@
       "Bash(npm install:*)",
       "Bash(cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma migrate dev:*)",
       "Bash(npx cross-env:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(npm run test:setup:*)",
+      "Bash(cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma migrate deploy:*)",
+      "Bash(set NODE_ENV=test)",
+      "Bash(set:*)",
+      "Bash(npx prisma generate:*)",
+      "Bash(tasklist:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx vitest run:*)",
+      "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma migrate deploy:*)",
+      "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma generate:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }

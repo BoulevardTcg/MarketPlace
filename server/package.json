@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
+    "dev:db": "node -e \"require('fs').mkdirSync('.db',{recursive:true})\" && cross-env DATABASE_URL=\"file:./.db/dev.db\" prisma generate --schema prisma/test/schema.prisma && cross-env DATABASE_URL=\"file:./.db/dev.db\" prisma migrate deploy --schema prisma/test/schema.prisma",
     "build": "tsc",
     "start": "node dist/main.js",
     "pretest": "npm run test:setup",

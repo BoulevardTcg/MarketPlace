@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 
@@ -25,6 +26,7 @@ const uploadBodySchema = z.object({
 router.post(
   "/upload",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const body = uploadBodySchema.parse(req.body);
 

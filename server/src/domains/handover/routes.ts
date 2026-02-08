@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { HandoverStatus } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
+import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { requireRole } from "../../shared/auth/requireRole.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
@@ -33,6 +34,7 @@ const patchHandoverSchema = z.object({
 router.post(
   "/handovers",
   requireAuth,
+  requireNotBanned,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const body = createHandoverSchema.parse(req.body);

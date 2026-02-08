@@ -5,10 +5,18 @@ import path from "node:path";
 const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
+const isDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
+const defaultDevDb = "file:./.db/dev.db";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().min(0).max(65535).default(8081),
-  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  DATABASE_URL: z
+    .string()
+    .min(1, "DATABASE_URL is required")
+    .optional()
+    .transform((v) => (v || (isDev ? defaultDevDb : undefined))!)
+    .refine((v) => v?.length, { message: "DATABASE_URL is required" }),
   JWT_PUBLIC_KEY: z.string().optional(),
   JWT_SECRET: z.string().optional(),
   CORS_ORIGIN: z.string().optional(),
@@ -16,6 +24,8 @@ const envSchema = z.object({
   LISTING_IMAGES_BUCKET: z.string().optional(),
   /** AWS region for S3 (e.g. eu-west-1). Required when LISTING_IMAGES_BUCKET is set. */
   AWS_REGION: z.string().optional(),
+  /** Enable Cardmarket Price Guide CSV import job. */
+  PRICE_IMPORT_ENABLED: z.enum(["true", "false"]).default("false"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -30,3 +40,7 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
+
+if (isDev && !process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = env.DATABASE_URL;
+}
