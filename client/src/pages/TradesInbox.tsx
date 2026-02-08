@@ -81,9 +81,11 @@ export function TradesInbox() {
         </div>
       )}
 
-      <div className="tabs">
+      <div className="tabs" role="tablist" aria-label="Type d'offres">
         <button
           type="button"
+          role="tab"
+          aria-selected={type === "received"}
           className={`tab ${type === "received" ? "active" : ""}`}
           onClick={() => setType("received")}
         >
@@ -91,6 +93,8 @@ export function TradesInbox() {
         </button>
         <button
           type="button"
+          role="tab"
+          aria-selected={type === "sent"}
           className={`tab ${type === "sent" ? "active" : ""}`}
           onClick={() => setType("sent")}
         >
@@ -105,7 +109,7 @@ export function TradesInbox() {
       </div>
 
       {loading && (
-        <p style={{ color: "var(--color-text-muted)" }}>Chargement…</p>
+        <p style={{ color: "var(--color-text-muted)" }} role="status" aria-live="polite">Chargement…</p>
       )}
 
       {!loading && !error && items.length === 0 && (

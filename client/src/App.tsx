@@ -3,13 +3,36 @@ import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { TradesInbox } from "./pages/TradesInbox";
 import { TradeThread } from "./pages/TradeThread";
 import { TradesNew } from "./pages/TradesNew";
+import { MarketplaceBrowse } from "./pages/MarketplaceBrowse";
+import { ListingDetail } from "./pages/ListingDetail";
+import { PortfolioDashboard } from "./pages/PortfolioDashboard";
 
 const API = import.meta.env.VITE_API_URL ?? "";
+
+function getTheme(): "dark" | "light" {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
 
 function App() {
   const [health, setHealth] = useState<{ status?: string } | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">(getTheme);
   const location = useLocation();
+
+  useEffect(() => {
+    setTheme(getTheme());
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    if (next === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+    setTheme(next);
+  };
 
   useEffect(() => {
     fetch(`${API}/health`)
@@ -30,16 +53,25 @@ function App() {
           <Link to="/" className="logo">
             BoulevardTCG Market
           </Link>
-          <nav className="nav">
-            <Link to="/" className={`nav-link ${isActive("/") && location.pathname === "/" ? "active" : ""}`}>
+          <nav className="nav" aria-label="Navigation principale">
+            <Link to="/" className={`nav-link ${isActive("/") && location.pathname === "/" ? "active" : ""}`} {...(location.pathname === "/" ? { "aria-current": "page" as const } : {})}>
               Accueil
             </Link>
-            <Link to="/trades" className={`nav-link ${isActive("/trades") && location.pathname === "/trades" ? "active" : ""}`}>
+            <Link to="/marketplace" className={`nav-link ${isActive("/marketplace") ? "active" : ""}`} {...(isActive("/marketplace") ? { "aria-current": "page" as const } : {})}>
+              Marketplace
+            </Link>
+            <Link to="/portfolio" className={`nav-link ${isActive("/portfolio") ? "active" : ""}`} {...(isActive("/portfolio") ? { "aria-current": "page" as const } : {})}>
+              Portfolio
+            </Link>
+            <Link to="/trades" className={`nav-link ${isActive("/trades") && location.pathname === "/trades" ? "active" : ""}`} {...(location.pathname === "/trades" ? { "aria-current": "page" as const } : {})}>
               Échanges
             </Link>
-            <Link to="/trades/new" className={`nav-link ${isActive("/trades/new") ? "active" : ""}`}>
+            <Link to="/trades/new" className={`nav-link ${isActive("/trades/new") ? "active" : ""}`} {...(isActive("/trades/new") ? { "aria-current": "page" as const } : {})}>
               Nouvelle offre
             </Link>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={toggleTheme} aria-label={theme === "dark" ? "Passer au thème clair" : "Passer au thème sombre"}>
+              {theme === "dark" ? "☀" : "🌙"}
+            </button>
           </nav>
         </div>
       </header>
@@ -68,7 +100,7 @@ function App() {
                   </Link>
                 </div>
                 <div style={{ marginTop: "var(--space-4)" }}>
-                  <span className={`health-badge ${healthError ? "err" : health?.status === "ok" ? "ok" : ""}`}>
+                  <span className={`health-badge ${healthError ? "err" : health?.status === "ok" ? "ok" : ""}`} role="status" aria-live="polite">
                     {healthError ? "API hors ligne" : health?.status === "ok" ? "API connectée" : "Vérification…"}
                   </span>
                   {healthError && (
@@ -80,6 +112,9 @@ function App() {
               </section>
             }
           />
+          <Route path="/marketplace" element={<MarketplaceBrowse />} />
+          <Route path="/marketplace/:id" element={<ListingDetail />} />
+          <Route path="/portfolio" element={<PortfolioDashboard />} />
           <Route path="/trades" element={<TradesInbox />} />
           <Route path="/trades/new" element={<TradesNew />} />
           <Route path="/trades/:id" element={<TradeThread />} />

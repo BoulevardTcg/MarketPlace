@@ -15,7 +15,8 @@
       "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx vitest run:*)",
       "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma migrate deploy:*)",
       "Bash(NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma generate:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

@@ -10,6 +10,7 @@ export default defineConfig({
       "/me": "http://localhost:8081",
       "/marketplace": "http://localhost:8081",
       "/trade": "http://localhost:8081",
+      "/cards": "http://localhost:8081",
       "/collection": "http://localhost:8081",
       "/users": "http://localhost:8081",
       "/analytics": "http://localhost:8081",
