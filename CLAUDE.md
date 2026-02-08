@@ -62,6 +62,7 @@ MarketPlace/                  # Monorepo
 │   │   │   ├── marketplace/  # Listings, images, favoris
 │   │   │   ├── trade/        # Offres d'échange, messages, read state
 │   │   │   ├── collection/   # Inventaire utilisateur
+
 │   │   │   ├── profile/      # Profils utilisateur
 │   │   │   ├── analytics/    # Prix et alertes
 │   │   │   ├── handover/     # Vérification anti-fake
