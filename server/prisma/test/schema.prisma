@@ -413,6 +413,25 @@ model SellerReputation {
   @@index([score])
 }
 
+// --- User Profile Types (role-based features) ---
+
+enum UserProfileType {
+  COLLECTOR
+  SELLER
+  TRADER
+  INVESTOR
+}
+
+model UserActiveProfile {
+  id          String          @id @default(cuid())
+  userId      String
+  profileType UserProfileType
+  createdAt   DateTime        @default(now())
+
+  @@unique([userId, profileType])
+  @@index([userId])
+}
+
 // --- Pricing + Portfolio (external market data) ---
 
 enum PriceSource {

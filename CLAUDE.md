@@ -64,14 +64,15 @@ MarketPlace/                  # Monorepo
 │   │   │   ├── collection/   # Inventaire utilisateur
 
 │   │   │   ├── profile/      # Profils utilisateur
+│   │   │   ├── profile-types/# Profils utilisateur (COLLECTOR, SELLER, TRADER, INVESTOR)
 │   │   │   ├── analytics/    # Prix et alertes
 │   │   │   ├── handover/     # Vérification anti-fake
 │   │   │   ├── upload/       # OCR/IA (stub)
 │   │   │   └── trust/        # Reports, modération, réputation
 │   │   └── shared/
-│   │       ├── auth/         # jwt, requireAuth, optionalAuth, requireRole
+│   │       ├── auth/         # jwt, requireAuth, optionalAuth, requireRole, requireNotBanned, requireProfile
 │   │       ├── config/       # env (Zod validated)
-│   │       ├── db/           # Prisma client (PostgreSQL prod, SQLite test/dev)
+│   │       ├── db/           # Prisma client (PostgreSQL prod/dev, SQLite test)
 │   │       ├── http/         # asyncHandler, errorHandler, response, pagination
 │   │       ├── observability/# logger, httpLogger, requestId
 │   │       ├── storage/      # S3 presigned URLs
@@ -106,6 +107,7 @@ Each feature lives in `src/domains/<name>/routes.ts`. Add new domains following 
 | `analytics` | `/analytics` | Prix historiques, alertes de prix |
 | `handover` | `/handovers` | Vérification anti-fake (admin-only pour validation) |
 | `upload` | `/upload` | Stub OCR/IA pour reconnaissance de cartes |
+| `profile-types` | `/users/me/profiles` | Profils utilisateur (GET list, PUT enable/disable) |
 | `trust` | `/reports`, `/admin`, `/internal` | Reports, modération admin, réputation |
 
 ## Key Patterns
@@ -161,6 +163,7 @@ throw new AppError("NOT_FOUND", "Listing not found", 404);
 
 **Profiles & Analytics:**
 - **UserProfile**: Local cache (username, avatarUrl, bio, country, trustScore, tradeCount, listingCount)
+- **UserActiveProfile**: User's enabled profile types (unique: userId + profileType). Types: COLLECTOR, SELLER, TRADER, INVESTOR.
 - **PriceSnapshot**: Historical price data (unique: cardId + language + day)
 - **PriceAlert**: Price monitoring (direction: DROP/RISE)
 
@@ -195,6 +198,8 @@ Middleware disponibles dans `src/shared/auth/`:
 - `requireAuth` — obligatoire, sets `req.user.userId` + `req.user.roles`
 - `optionalAuth` — continue sans erreur si token absent/invalide
 - `requireRole(role)` — factory, vérifie `req.user.roles` (ex: `requireRole("ADMIN")`)
+- `requireNotBanned` — bloque les utilisateurs bannis (403 USER_BANNED), appliqué sur toutes les routes d'écriture
+- `requireProfile(...types)` — factory, vérifie que l'utilisateur a au moins un des profils actifs (403 PROFILE_REQUIRED). Opt-in via `PROFILE_GATE_ENABLED=true`.
 
 ## Middleware Stack
 
@@ -211,8 +216,29 @@ L'ordre dans `app.ts` :
 
 ## Environment Variables
 
-Required: `DATABASE_URL` (PostgreSQL connection string, ou `file:./path` pour SQLite en dev)
+Required: `DATABASE_URL` (PostgreSQL connection string; defaults to Docker PG URL in dev)
 Required (one of): `JWT_PUBLIC_KEY` or `JWT_SECRET`
 Optional: `PORT` (default 8081), `CORS_ORIGIN` (comma-separated), `NODE_ENV`
 Optional (S3): `LISTING_IMAGES_BUCKET`, `AWS_REGION` — nécessaires pour l'upload d'images listing
 Optional (import prix): `PRICE_IMPORT_ENABLED` (`true` | `false`, défaut `false`) — active le job d'import CSV Cardmarket Price Guide
+Optional (profile gate): `PROFILE_GATE_ENABLED` (`true` | `false`, défaut `false`) — active le gating par profil sur pricing/trade routes
+
+## Docker (dev)
+
+Dev utilise PostgreSQL via Docker. Tests restent sur SQLite.
+
+```bash
+# Démarrer PG seul (recommandé pour dev sur le host)
+docker compose up -d postgres
+
+# Tout dans Docker (PG + server avec hot-reload)
+docker compose up -d
+
+# Scripts disponibles
+npm run docker:up / docker:down / docker:logs   # depuis la racine
+npm run docker:up / docker:down                  # depuis server/
+```
+
+Credentials par défaut (docker-compose.yml + .env.example) :
+- User: `boulevard`, Password: `boulevard_dev`, DB: `boulevard_market`
+- URL: `postgresql://boulevard:boulevard_dev@localhost:5432/boulevard_market`

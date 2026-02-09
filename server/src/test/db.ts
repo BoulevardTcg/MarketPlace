@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
 export async function resetDb(prisma: PrismaClient): Promise<void> {
+  await prisma.userActiveProfile.deleteMany();
   await prisma.cardPriceSnapshot.deleteMany();
   await prisma.externalProductRef.deleteMany();
   await prisma.userPortfolioSnapshot.deleteMany();

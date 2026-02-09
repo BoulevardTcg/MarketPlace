@@ -6,7 +6,7 @@ const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 
 const isDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
-const defaultDevDb = "file:./.db/dev.db";
+const defaultDevDb = "postgresql://boulevard:boulevard_dev@localhost:5432/boulevard_market";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -26,6 +26,8 @@ const envSchema = z.object({
   AWS_REGION: z.string().optional(),
   /** Enable Cardmarket Price Guide CSV import job. */
   PRICE_IMPORT_ENABLED: z.enum(["true", "false"]).default("false"),
+  /** Enable profile-type gating on pricing/trade routes. Default OFF for backwards compatibility. */
+  PROFILE_GATE_ENABLED: z.enum(["true", "false"]).default("false"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -40,7 +42,3 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
-
-if (isDev && !process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = env.DATABASE_URL;
-}

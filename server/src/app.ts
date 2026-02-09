@@ -17,6 +17,7 @@ import { analyticsRoutes } from "./domains/analytics/routes.js";
 import { handoverRoutes } from "./domains/handover/routes.js";
 import { uploadRoutes } from "./domains/upload/routes.js";
 import { trustRoutes } from "./domains/trust/routes.js";
+import { profileTypesRoutes } from "./domains/profile-types/routes.js";
 
 const app = express();
 
@@ -76,6 +77,7 @@ app.use(marketplaceRoutes);
 app.use(tradeRoutes);
 app.use(collectionRoutes);
 app.use(trustRoutes);
+app.use(profileTypesRoutes);
 
 app.use(errorHandler);
 app.use((_req, res) => {

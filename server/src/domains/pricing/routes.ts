@@ -6,6 +6,9 @@ import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
 import { prisma } from "../../shared/db/prisma.js";
+import { env } from "../../shared/config/env.js";
+import { requireProfile } from "../../shared/auth/requireProfile.js";
+import type { Request, Response, NextFunction } from "express";
 import {
   paginationQuerySchema,
   decodeCursor,
@@ -13,6 +16,12 @@ import {
 } from "../../shared/http/pagination.js";
 
 const router = Router();
+
+// ─── Profile gate (opt-in) ───────────────────────────────────
+const profileGate =
+  env.PROFILE_GATE_ENABLED === "true"
+    ? requireProfile("INVESTOR", "COLLECTOR")
+    : (_req: Request, _res: Response, next: NextFunction) => next();
 
 // ─── Zod Schemas ──────────────────────────────────────────────
 
@@ -66,6 +75,7 @@ router.get(
 router.get(
   "/users/me/portfolio",
   requireAuth,
+  profileGate,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const source = PriceSource.CARDMARKET;
@@ -162,6 +172,7 @@ router.get(
 router.get(
   "/users/me/portfolio/history",
   requireAuth,
+  profileGate,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
     const query = portfolioHistoryQuerySchema.parse(req.query);

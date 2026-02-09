@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: boulevard
+      POSTGRES_PASSWORD: boulevard_dev
+      POSTGRES_DB: boulevard_market
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U boulevard -d boulevard_market"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      target: dev
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://boulevard:boulevard_dev@postgres:5432/boulevard_market
+      JWT_SECRET: dev-secret-change-me
+      PORT: "8081"
+    volumes:
+      - ./server/src:/app/src
+      - ./server/prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

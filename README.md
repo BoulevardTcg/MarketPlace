@@ -7,7 +7,7 @@ Marketplace et échanges BoulevardTCG (C2C). Projet indépendant de la boutique 
 ## Prérequis
 
 - Node.js 24+
-- PostgreSQL (pour le backend)
+- Docker (pour PostgreSQL en dev)
 - npm
 
 ## Installation
@@ -32,14 +32,15 @@ Copier `.env.example` vers `.env` et renseigner les variables :
 | Variable        | Description                                      | Obligatoire |
 |----------------|--------------------------------------------------|-------------|
 | `NODE_ENV`     | `development` \| `production` \| `test`          | Non (défaut: development) |
-| `PORT`         | Port d’écoute (défaut: 8081)                     | Non        |
-| `DATABASE_URL` | URL de connexion PostgreSQL (base `boulevard_market`) | Oui       |
+| `PORT`         | Port d'écoute (défaut: 8081)                     | Non        |
+| `DATABASE_URL` | URL de connexion PostgreSQL (base `boulevard_market`) | Oui (prod), auto en dev via Docker |
 | `JWT_PUBLIC_KEY` | Clé publique pour vérifier les JWT (RS256)    | Oui*       |
 | `JWT_SECRET`   | Secret partagé si HS256 (sinon RS256)            | Oui*       |
 | `CORS_ORIGIN`  | Origine CORS autorisée                           | Non        |
-| `LISTING_IMAGES_BUCKET` | Bucket S3 pour les images d’annonces (presigned upload) | Non (503 si absent) |
+| `LISTING_IMAGES_BUCKET` | Bucket S3 pour les images d'annonces (presigned upload) | Non (503 si absent) |
 | `AWS_REGION`   | Région AWS pour S3 (ex. `eu-west-1`)              | Si bucket défini |
 | `PRICE_IMPORT_ENABLED` | `true` \| `false` — active l'import CSV Cardmarket Price Guide | Non (défaut: false) |
+| `PROFILE_GATE_ENABLED` | `true` \| `false` — active le gating par profil sur pricing/trade | Non (défaut: false) |
 
 \* Au moins un de `JWT_PUBLIC_KEY` ou `JWT_SECRET` doit être défini pour utiliser les routes protégées (ex. `/me`).
 
@@ -64,6 +65,7 @@ Modèles principaux :
 - **ModerationAction** (trust) — action admin : `targetType` (LISTING | USER | TRADE), `targetId`, `actionType` (HIDE | UNHIDE | WARN | BAN | UNBAN | NOTE), `note?`, `actorUserId`. LISTING : HIDE/UNHIDE togglent `Listing.isHidden`. USER : BAN met à jour `UserModerationState`, UNBAN → `UserModerationState.isBanned=false` (clear banReason/bannedAt), WARN incrémente `warnCount` ; HIDE/UNHIDE invalides (400). TRADE : HIDE/UNHIDE invalides (400) ; NOTE/WARN/BAN enregistrés sans état métier. UNBAN invalide sur LISTING/TRADE (400). Index : (targetType, targetId, createdAt), (actorUserId, createdAt).
 - **UserModerationState** (trust) — état de modération utilisateur : `userId` (unique), `isBanned`, `banReason?`, `bannedAt?`, `warnCount`, `lastWarnAt?`, `updatedAt`. Utilisé pour bloquer les utilisateurs bannis sur les routes d’écriture (403 USER_BANNED). Index : (isBanned), (warnCount).
 - **SellerReputation** (trust) — réputation vendeur : `userId` (unique), `score`, `totalSales`, `totalTrades`, `disputesCount`, `reportsCount`. Score V1 = totalSales + totalTrades - reportsCount * 2.
+- **UserActiveProfile** (profile-types) — profils actifs d'un utilisateur : `userId`, `profileType` (COLLECTOR | SELLER | TRADER | INVESTOR). Unicité (userId, profileType). Permet d'activer/désactiver des fonctionnalités en fonction du profil utilisateur. Quand `PROFILE_GATE_ENABLED=true`, les routes portfolio nécessitent INVESTOR ou COLLECTOR, et la création de trade nécessite TRADER.
 
 Générer le client Prisma :
 
@@ -87,20 +89,49 @@ npm run prisma:studio
 
 ## Lancer en dev
 
-**Sans PostgreSQL** (SQLite par défaut en dev) : à la première utilisation, depuis `server/` : `npm run dev:db`. Puis lance le serveur. En dev, si `DATABASE_URL` n’est pas défini, le serveur utilise `file:./.db/dev.db` (schéma SQLite test).
-
-**Depuis la racine** (backend + front en parallèle) :
+### Option A : PostgreSQL Docker + serveur sur le host (recommande)
 
 ```bash
-npm run dev
+# 1. Demarrer PostgreSQL
+docker compose up -d postgres
+
+# 2. Setup
+cd server
+cp .env.example .env            # credentials alignes avec docker-compose
+npm run dev:db                   # prisma generate + migrate deploy vers PG Docker
+
+# 3. Lancer
+cd ..
+npm run dev                      # server (8081) + client (5173) en parallele
 ```
 
-- API : `http://localhost:8081`
-- Front : `http://localhost:5173` (Vite proxy vers l’API)
+### Option B : tout dans Docker
 
-**Ou séparément :**
+```bash
+docker compose up -d             # PG + server avec hot-reload (bind mount src/ + prisma/)
+```
+
+### Acces
+
+- API : `http://localhost:8081`
+- Front : `http://localhost:5173` (Vite proxy vers l'API)
+
+### Docker scripts
+
+```bash
+# Depuis la racine :
+npm run docker:up               # docker compose up -d
+npm run docker:down             # docker compose down
+npm run docker:logs             # docker compose logs -f
+
+# Depuis server/ :
+npm run docker:up               # utilise ../docker-compose.yml
+npm run docker:down
+```
+
+**Ou separement :**
 - `npm run dev:server` — backend seul (port 8081)
-- `npm run dev:client` — front seul (port 5173) ; l’API doit tourner sur 8081 pour les appels proxy.
+- `npm run dev:client` — front seul (port 5173) ; l'API doit tourner sur 8081 pour les appels proxy.
 
 ## Sécurité
 
@@ -208,6 +239,13 @@ Si `prisma generate` échoue avec **EPERM** (rename du `query_engine-*.dll`), un
 - **GET /users/:id/profile** — Profil public par userId. Réponse : `{ "data": { userId, username, avatarUrl, bio, country, trustScore, ... } }`. Erreur 404 si absent.
 - **GET /users/me/profile** — Mon profil (auth). Crée un stub si absent. Réponse : `{ "data": { ... } }`.
 - **PATCH /users/me/profile** — Mise à jour partielle (auth). Body : optionnels `username`, `avatarUrl`, `bio`, `country`. Réponse : `{ "data": { ... } }`.
+
+### Profile Types (protégés)
+
+- **GET /users/me/profiles** — Liste des profils activés (auth). Réponse : `{ "data": { "profiles": ["COLLECTOR", ...], "available": ["COLLECTOR", "SELLER", "TRADER", "INVESTOR"] } }`.
+- **PUT /users/me/profiles** — Activer/désactiver des profils (idempotent, auth). Body : `{ "profiles": ["COLLECTOR", "TRADER"] }`. Réponse : `{ "data": { "profiles": [...], "available": [...] } }`.
+
+Quand `PROFILE_GATE_ENABLED=true` : les routes portfolio (GET /users/me/portfolio, /portfolio/history) nécessitent INVESTOR ou COLLECTOR. La création de trade (POST /trade/offers) nécessite TRADER.
 
 ### Marketplace (protégés)
 

@@ -7,6 +7,8 @@ import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
 import { prisma } from "../../shared/db/prisma.js";
+import { env } from "../../shared/config/env.js";
+import { requireProfile } from "../../shared/auth/requireProfile.js";
 import {
   paginationQuerySchema,
   decodeCursor,
@@ -21,6 +23,12 @@ import type { TradeItem } from "../../shared/trade/items.js";
 import type { PrismaClient } from "@prisma/client";
 
 const router = Router();
+
+// ─── Profile gate (opt-in) ───────────────────────────────────
+const tradeProfileGate =
+  env.PROFILE_GATE_ENABLED === "true"
+    ? requireProfile("TRADER")
+    : (_req: import("express").Request, _res: import("express").Response, next: import("express").NextFunction) => next();
 
 /** In a transaction: atomic decrement giver (quantity >= N), then increment receiver (upsert). */
 async function applyTradeItemMove(
@@ -159,6 +167,7 @@ router.post(
   "/trade/offers",
   requireAuth,
   requireNotBanned,
+  tradeProfileGate,
   asyncHandler(async (req, res) => {
     const body = createTradeOfferBodySchema.parse(req.body);
     const creatorUserId = (req as RequestWithUser).user.userId;

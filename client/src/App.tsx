@@ -18,11 +18,25 @@ function App() {
   const [health, setHealth] = useState<{ status?: string } | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">(getTheme);
+  const [navOpen, setNavOpen] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
     setTheme(getTheme());
   }, []);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNavOpen(false);
+    };
+    document.addEventListener("keydown", onEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEscape);
+      document.body.style.overflow = "";
+    };
+  }, [navOpen]);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -46,33 +60,55 @@ function App() {
     return location.pathname.startsWith(path);
   };
 
+  const closeNav = () => setNavOpen(false);
+
   return (
     <>
-      <header className="header">
+      <header className={`header ${navOpen ? "nav-open" : ""}`}>
         <div className="header-inner">
-          <Link to="/" className="logo">
+          <Link to="/" className="logo" onClick={closeNav}>
             BoulevardTCG Market
           </Link>
-          <nav className="nav" aria-label="Navigation principale">
-            <Link to="/" className={`nav-link ${isActive("/") && location.pathname === "/" ? "active" : ""}`} {...(location.pathname === "/" ? { "aria-current": "page" as const } : {})}>
+          <nav id="main-nav" className="nav" aria-label="Navigation principale" onClick={(e) => { if (e.target instanceof HTMLElement && !e.target.closest(".nav-link")) closeNav(); }}>
+            <Link to="/" className={`nav-link ${isActive("/") && location.pathname === "/" ? "active" : ""}`} {...(location.pathname === "/" ? { "aria-current": "page" as const } : {})} onClick={closeNav}>
               Accueil
             </Link>
-            <Link to="/marketplace" className={`nav-link ${isActive("/marketplace") ? "active" : ""}`} {...(isActive("/marketplace") ? { "aria-current": "page" as const } : {})}>
+            <Link to="/marketplace" className={`nav-link ${isActive("/marketplace") ? "active" : ""}`} {...(isActive("/marketplace") ? { "aria-current": "page" as const } : {})} onClick={closeNav}>
               Marketplace
             </Link>
-            <Link to="/portfolio" className={`nav-link ${isActive("/portfolio") ? "active" : ""}`} {...(isActive("/portfolio") ? { "aria-current": "page" as const } : {})}>
+            <Link to="/portfolio" className={`nav-link ${isActive("/portfolio") ? "active" : ""}`} {...(isActive("/portfolio") ? { "aria-current": "page" as const } : {})} onClick={closeNav}>
               Portfolio
             </Link>
-            <Link to="/trades" className={`nav-link ${isActive("/trades") && location.pathname === "/trades" ? "active" : ""}`} {...(location.pathname === "/trades" ? { "aria-current": "page" as const } : {})}>
+            <Link to="/trades" className={`nav-link ${isActive("/trades") && location.pathname === "/trades" ? "active" : ""}`} {...(location.pathname === "/trades" ? { "aria-current": "page" as const } : {})} onClick={closeNav}>
               Échanges
             </Link>
-            <Link to="/trades/new" className={`nav-link ${isActive("/trades/new") ? "active" : ""}`} {...(isActive("/trades/new") ? { "aria-current": "page" as const } : {})}>
+            <Link to="/trades/new" className={`nav-link ${isActive("/trades/new") ? "active" : ""}`} {...(isActive("/trades/new") ? { "aria-current": "page" as const } : {})} onClick={closeNav}>
               Nouvelle offre
             </Link>
+          </nav>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="nav-toggle"
+              aria-expanded={navOpen}
+              aria-controls="main-nav"
+              aria-label={navOpen ? "Fermer le menu" : "Ouvrir le menu"}
+              onClick={() => setNavOpen(!navOpen)}
+            >
+              {navOpen ? (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
             <button type="button" className="btn btn-ghost btn-sm" onClick={toggleTheme} aria-label={theme === "dark" ? "Passer au thème clair" : "Passer au thème sombre"}>
               {theme === "dark" ? "☀" : "🌙"}
             </button>
-          </nav>
+          </div>
         </div>
       </header>
 
