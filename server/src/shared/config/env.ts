@@ -1,9 +1,17 @@
 import { z } from "zod";
 import dotenv from "dotenv";
 import path from "node:path";
+import fs from "node:fs";
 
 const envFile = process.env.NODE_ENV === "test" ? ".env.test" : ".env";
 dotenv.config({ path: path.resolve(process.cwd(), envFile) });
+
+// SÉCURITÉ : le Marketplace ne doit JAMAIS avoir accès à la clé privée (fuite, logs, dump env).
+if (process.env.JWT_PRIVATE_KEY) {
+  throw new Error(
+    "JWT_PRIVATE_KEY must never be set in Marketplace. Use only JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH (Boutique private key stays on Boutique)."
+  );
+}
 
 const isDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
 const defaultDevDb = "postgresql://boulevard:boulevard_dev@localhost:5432/boulevard_market";
@@ -18,6 +26,8 @@ const envSchema = z.object({
     .transform((v) => (v || (isDev ? defaultDevDb : undefined))!)
     .refine((v) => v?.length, { message: "DATABASE_URL is required" }),
   JWT_PUBLIC_KEY: z.string().optional(),
+  /** Chemin vers le fichier PEM de la clé publique (alternative à JWT_PUBLIC_KEY, évite PEM dans l'env). */
+  JWT_PUBLIC_KEY_PATH: z.string().optional(),
   JWT_SECRET: z.string().optional(),
   CORS_ORIGIN: z.string().optional(),
   /** S3 bucket for listing images (presigned upload). If unset, presigned-upload returns 503. */
@@ -42,3 +52,16 @@ function loadEnv(): Env {
 }
 
 export const env = loadEnv();
+
+/** Retourne la clé publique PEM (fichier si JWT_PUBLIC_KEY_PATH, sinon env JWT_PUBLIC_KEY). */
+export function getJwtPublicKey(): string | undefined {
+  const pathKey = env.JWT_PUBLIC_KEY_PATH;
+  if (pathKey) {
+    try {
+      return fs.readFileSync(pathKey, "utf8").trim();
+    } catch (e) {
+      throw new Error(`JWT_PUBLIC_KEY_PATH: cannot read file ${pathKey}: ${e}`);
+    }
+  }
+  return env.JWT_PUBLIC_KEY;
+}

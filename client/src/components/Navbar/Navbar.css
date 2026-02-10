@@ -1,0 +1,902 @@
+/* ═══════════════════════════════════════════════════════════════
+   Glass Pill Navbar
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 1. Navbar Wrapper ─────────────────────────────────────── */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-sticky, 200);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 1rem clamp(1rem, 4vw, 2rem);
+  pointer-events: none;
+  animation: navbar-enter 0.28s var(--ease-spring);
+}
+
+@keyframes navbar-enter {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* ─── 2. Pill Container ─────────────────────────────────────── */
+.navbar-pill {
+  width: 100%;
+  max-width: 1200px;
+  height: 56px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-radius: 9999px;
+  box-shadow: var(--glass-shadow), inset 0 0 1px rgba(255, 255, 255, 0.05);
+  pointer-events: auto;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* ─── 3. Inner Grid ─────────────────────────────────────────── */
+.navbar-container {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 2rem;
+  height: 100%;
+  padding: 0 clamp(1.25rem, 3vw, 2rem);
+}
+
+/* ─── 4. Logo ───────────────────────────────────────────────── */
+.navbar-logo {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s var(--ease-spring);
+}
+
+.navbar-logo:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+.navbar-logo:hover {
+  transform: scale(1.02);
+}
+
+.navbar-logo:active {
+  transform: scale(0.98);
+}
+
+.navbar-logo-img {
+  height: 40px;
+  object-fit: contain;
+  display: block;
+}
+
+/* ─── 5. Center Links ───────────────────────────────────────── */
+.navbar-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.navbar-links li {
+  display: flex;
+}
+
+.navbar-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem 0;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.navbar-link:hover,
+.navbar-link--active {
+  color: var(--color-text);
+}
+
+.navbar-link:hover {
+  transform: translateY(-1px);
+}
+
+.navbar-link-text {
+  position: relative;
+  z-index: 1;
+}
+
+/* Underline indicator */
+.navbar-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
+  transition: all 0.2s var(--ease-spring);
+}
+
+/* ─── 6. Actions ────────────────────────────────────────────── */
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-self: end;
+}
+
+/* ─── 7. Icon Buttons Base ──────────────────────────────────── */
+.navbar-icon-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.navbar-icon-btn:hover {
+  color: var(--color-text);
+  background-color: var(--border-subtle);
+}
+
+.navbar-icon-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.navbar-icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* ─── 8. Theme Toggle (Liquid Metal — même effet chrome que pokecard) ───────────────── */
+.navbar-theme-toggle {
+  flex-shrink: 0;
+}
+
+.navbar-theme-icon {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-primary, #f5f5f3);
+}
+
+/* ─── 9. Cart ───────────────────────────────────────────────── */
+.navbar-cart-btn {
+  position: relative;
+}
+
+.navbar-cart-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 9999px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+/* ─── 10. Account Pill ──────────────────────────────────────── */
+.navbar-account-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: var(--border-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) ease,
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.navbar-account-btn:hover {
+  color: var(--color-text);
+  background-color: var(--border-default);
+}
+
+.navbar-account-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.navbar-account-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── 11. Connexion Link ────────────────────────────────────── */
+.navbar-connexion-link {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--duration-fast) ease;
+}
+
+.navbar-connexion-link:hover {
+  color: var(--color-text);
+}
+
+.navbar-connexion-link:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+
+/* ─── 12. Hamburger (hidden by default, shown <1024) ────────── */
+.navbar-hamburger {
+  display: none;
+}
+
+/* ─── 13. Desktop-only elements ─────────────────────────────── */
+.navbar-desktop-only {
+  /* visible by default */
+}
+
+.navbar-search-desktop {
+  /* visible by default */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Search
+   ═══════════════════════════════════════════════════════════════ */
+
+.navbar-search {
+  position: relative;
+}
+
+.navbar-search-container {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  min-width: 200px;
+  max-width: 280px;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    border-radius 0.2s ease;
+}
+
+.navbar-search-container:focus-within {
+  background: var(--color-bg-hover);
+  border-color: var(--border-hover);
+  box-shadow: 0 0 0 2px var(--border-accent);
+}
+
+.navbar-search-container.navbar-search--open {
+  border-radius: 12px 12px 0 0;
+}
+
+.navbar-search-icon {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.navbar-search-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  padding: 0;
+}
+
+.navbar-search-input::placeholder {
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+/* Remove the native search clear button */
+.navbar-search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.navbar-search-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: navbar-spinner 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes navbar-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Light theme search overrides */
+[data-theme="light"] .navbar-search-container {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .navbar-search-spinner {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: var(--color-accent);
+}
+
+/* ─── Search Dropdown ───────────────────────────────────────── */
+.navbar-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: -1px;
+  background: rgba(20, 20, 20, 0.98);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  box-shadow: var(--shadow-lg);
+  max-height: 400px;
+  overflow: auto;
+  z-index: 1000;
+  animation: navbar-dropdown-enter 0.15s ease;
+}
+
+[data-theme="light"] .navbar-search-dropdown {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+@keyframes navbar-dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.navbar-search-result {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background-color 0.1s ease;
+}
+
+.navbar-search-result:hover,
+.navbar-search-result:focus {
+  background: var(--color-bg-hover);
+  outline: none;
+}
+
+.navbar-search-result-img {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--color-bg-subtle);
+}
+
+.navbar-search-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.navbar-search-result-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.navbar-search-result-price {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+}
+
+.navbar-search-view-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  border: none;
+  border-top: 1px solid var(--glass-border);
+  border-radius: 0 0 12px 12px;
+  background: none;
+  transition: background-color 0.1s ease;
+}
+
+.navbar-search-view-all:hover {
+  background: var(--color-bg-hover);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Mobile Bottom Sheet
+   ═══════════════════════════════════════════════════════════════ */
+
+.mobile-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay, 300);
+  background: rgba(10, 10, 11, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: mobile-overlay-enter 0.25s ease;
+}
+
+[data-theme="light"] .mobile-sheet-overlay {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+@keyframes mobile-overlay-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mobile-sheet-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 301;
+  background: var(--color-bg-elevated);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid var(--glass-border);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
+  max-height: 85vh;
+  overflow: auto;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  animation: mobile-panel-enter 0.4s var(--ease-spring);
+}
+
+@keyframes mobile-panel-enter {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.mobile-sheet-handle {
+  width: 48px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--color-text-muted);
+  margin: 1rem auto 0.5rem;
+  opacity: 0.5;
+}
+
+.mobile-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.mobile-sheet-logo {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.mobile-sheet-logo img {
+  height: 32px;
+  object-fit: contain;
+}
+
+.mobile-sheet-close {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.mobile-sheet-close:hover {
+  background: var(--color-bg-hover);
+}
+
+.mobile-sheet-close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Mobile search section */
+.mobile-sheet-search {
+  padding: 0.5rem 1rem;
+}
+
+.mobile-sheet-search .navbar-search {
+  width: 100%;
+}
+
+.mobile-sheet-search .navbar-search-container {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+}
+
+.mobile-sheet-search .navbar-search-dropdown {
+  max-height: 300px;
+}
+
+/* Mobile links */
+.mobile-sheet-links {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 1rem;
+  list-style: none;
+  margin: 0;
+}
+
+.mobile-sheet-link {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  position: relative;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.mobile-sheet-link:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.mobile-sheet-link--active {
+  color: var(--color-text);
+}
+
+.mobile-sheet-link--active::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+/* Mobile actions */
+.mobile-sheet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 1rem;
+  border-top: 1px solid var(--border-default);
+  margin-top: 0.5rem;
+}
+
+.mobile-sheet-action {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.mobile-sheet-action:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.mobile-sheet-action-cart {
+  position: relative;
+}
+
+.mobile-sheet-login-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-inverse);
+  background: var(--color-accent);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.mobile-sheet-login-cta:hover {
+  background: var(--color-accent-hover);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Responsive
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Tablet / Small Desktop: 768–1023 */
+@media (max-width: 1023px) {
+  .navbar {
+    padding: 0.75rem 1rem;
+  }
+
+  .navbar-pill {
+    height: 48px;
+  }
+
+  .navbar-container {
+    gap: 0.75rem;
+    padding: 0 0.75rem;
+  }
+
+  .navbar-logo-img {
+    height: 32px;
+  }
+
+  .navbar-links {
+    display: none;
+  }
+
+  .navbar-search-desktop {
+    display: none;
+  }
+
+  .navbar-desktop-only {
+    display: none !important;
+  }
+
+  .navbar-connexion-link {
+    display: none;
+  }
+
+  .navbar-hamburger {
+    display: flex;
+  }
+
+  .navbar-actions {
+    gap: 0.5rem;
+  }
+}
+
+/* Mobile: <=767 */
+@media (max-width: 767px) {
+  .navbar {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .navbar-pill {
+    height: 52px;
+  }
+
+  .navbar-container {
+    gap: 0.5rem;
+    padding: 0 0.625rem;
+  }
+
+  .navbar-icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .navbar-cart-badge {
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Reduced Motion
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar {
+    animation: navbar-fade-in 0.15s ease;
+  }
+
+  .navbar-link:hover {
+    transform: none;
+  }
+
+  .navbar-logo:hover,
+  .navbar-logo:active {
+    transform: none;
+  }
+
+  .navbar-theme-icon svg {
+    animation: none;
+  }
+
+  .navbar-icon-btn:active,
+  .navbar-theme-btn:hover,
+  .navbar-theme-btn:active {
+    transform: none;
+  }
+
+  .navbar-search-dropdown {
+    animation: none;
+  }
+
+  .mobile-sheet-panel {
+    animation: mobile-panel-fade-in 0.3s ease;
+  }
+
+  .mobile-sheet-overlay {
+    animation: mobile-overlay-enter 0.15s ease;
+  }
+}
+
+/* JS-detected reduced motion class fallback */
+.navbar--reduced-motion .navbar-link:hover {
+  transform: none;
+}
+
+.navbar--reduced-motion .navbar-logo:hover,
+.navbar--reduced-motion .navbar-logo:active {
+  transform: none;
+}
+
+.navbar--reduced-motion .navbar-theme-icon svg {
+  animation: none;
+}
+
+.navbar--reduced-motion .navbar-icon-btn:active,
+.navbar--reduced-motion .navbar-theme-btn:hover,
+.navbar--reduced-motion .navbar-theme-btn:active {
+  transform: none;
+}
+
+.navbar--reduced-motion .navbar-search-dropdown {
+  animation: none;
+}
+
+@keyframes navbar-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mobile-panel-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

@@ -1,4 +1,4 @@
-export type Game = "POKEMON" | "MAGIC" | "YUGIOH" | "ONEPIECE" | "LORCANA" | "DRAGONBALL";
+export type Game = "POKEMON" | "MAGIC" | "MTG" | "YUGIOH" | "ONEPIECE" | "ONE_PIECE" | "LORCANA" | "DRAGONBALL" | "OTHER";
 export type ListingCategory = "CARD" | "SEALED" | "ACCESSORY";
 export type Language = "FR" | "EN" | "JP" | "DE" | "ES" | "IT" | "OTHER";
 export type CardCondition = "NM" | "LP" | "MP" | "HP" | "DMG";
@@ -66,14 +66,48 @@ export interface PaginatedResponse<T> {
   nextCursor: string | null;
 }
 
-/** Label maps for display */
-export const GAME_LABELS: Record<Game, string> = {
+/** Collection dashboard breakdown entry */
+export interface BreakdownEntry {
+  key: string;
+  qty: number;
+  costCents: number;
+}
+
+/** Collection dashboard response */
+export interface CollectionDashboard {
+  totalQty: number;
+  totalCostCents: number;
+  byGame: BreakdownEntry[];
+  byLanguage: BreakdownEntry[];
+  byCondition: BreakdownEntry[];
+}
+
+/** Monthly sales entry */
+export interface MonthlySales {
+  month: string;
+  revenueCents: number;
+  count: number;
+}
+
+/** Sales summary response */
+export interface SalesSummary {
+  totalRevenueCents: number;
+  totalSold: number;
+  monthly: MonthlySales[];
+  byGame: { game: string; revenueCents: number; count: number }[];
+}
+
+/** Label maps for display (inclut variantes API: ONE_PIECE, MTG) */
+export const GAME_LABELS: Record<string, string> = {
   POKEMON: "Pokemon",
   MAGIC: "Magic",
+  MTG: "Magic",
   YUGIOH: "Yu-Gi-Oh!",
   ONEPIECE: "One Piece",
+  ONE_PIECE: "One Piece",
   LORCANA: "Lorcana",
   DRAGONBALL: "Dragon Ball",
+  OTHER: "Autre",
 };
 
 export const CONDITION_LABELS: Record<CardCondition, string> = {

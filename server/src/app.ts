@@ -24,8 +24,8 @@ const app = express();
 app.use(helmet());
 app.use(express.json());
 
-// CORS: supports comma-separated origins. In dev, allow Vite client (5173) by default if unset.
-const corsOrigin = env.CORS_ORIGIN ?? (env.NODE_ENV === "development" ? "http://localhost:5173" : undefined);
+// CORS: supports comma-separated origins. En dev, autoriser Boutique (5173) et Marketplace (5174) si non défini.
+const corsOrigin = env.CORS_ORIGIN ?? (env.NODE_ENV === "development" ? "http://localhost:5173,http://localhost:5174" : undefined);
 if (corsOrigin) {
   const origins = corsOrigin.split(",").map((s) => s.trim()).filter(Boolean);
   app.use(cors({ origin: origins.length === 1 ? origins[0] : origins }));

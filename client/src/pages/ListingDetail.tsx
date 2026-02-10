@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { fetchWithAuth, getJwt } from "../api";
+import { fetchWithAuth, getAccessToken } from "../api";
 import type { Listing } from "../types/marketplace";
 import {
   GAME_LABELS,
@@ -9,7 +9,7 @@ import {
   CATEGORY_LABELS,
   STATUS_LABELS,
 } from "../types/marketplace";
-import { PriceDisplay, Badge, Skeleton, ErrorState } from "../components";
+import { PriceDisplay, PriceDeltaBadge, Badge, Skeleton, ErrorState } from "../components";
 
 export function ListingDetail() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +18,11 @@ export function ListingDetail() {
   const [error, setError] = useState<string | null>(null);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
 
   const fetchListing = useCallback(async () => {
     if (!id) return;
@@ -44,6 +49,10 @@ export function ListingDetail() {
     fetchListing();
   }, [fetchListing]);
 
+  useEffect(() => {
+    setGalleryIndex(0);
+  }, [id]);
+
   const toggleFavorite = async () => {
     if (!id || favoriteLoading) return;
     setFavoriteLoading(true);
@@ -58,7 +67,26 @@ export function ListingDetail() {
     }
   };
 
-  const hasAuth = !!getJwt();
+  const submitReport = async () => {
+    if (!id || !reportReason.trim() || reportSubmitting) return;
+    setReportSubmitting(true);
+    try {
+      const res = await fetchWithAuth(`/reports/listings/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reportReason.trim() }),
+      });
+      if (res.ok) {
+        setReportSent(true);
+        setReportOpen(false);
+        setReportReason("");
+      }
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
+  const hasAuth = !!getAccessToken();
 
   // Loading skeleton
   if (loading) {
@@ -93,33 +121,67 @@ export function ListingDetail() {
   if (!listing) return null;
 
   const hasImages = listing.images && listing.images.length > 0;
+  const images = listing.images ?? [];
+  const currentImage = images[galleryIndex];
+  const canPrev = images.length > 1 && galleryIndex > 0;
+  const canNext = images.length > 1 && galleryIndex < images.length - 1;
 
   return (
     <section>
       <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
 
       <div className="listing-detail-layout">
-        {/* Gallery */}
+        {/* Gallery / carousel */}
         <div className="listing-detail-gallery">
           {hasImages ? (
-            <div className="listing-detail-main-image">
-              <img
-                src={listing.images![0].storageKey}
-                alt={listing.title}
-              />
-            </div>
+            <>
+              <div className="listing-detail-main-image">
+                <img
+                  src={currentImage!.storageKey}
+                  alt={`${listing.title} — image ${galleryIndex + 1}`}
+                />
+                {images.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="listing-detail-carousel-btn listing-detail-carousel-btn--prev"
+                      onClick={() => setGalleryIndex((i) => Math.max(0, i - 1))}
+                      disabled={!canPrev}
+                      aria-label="Image précédente"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      className="listing-detail-carousel-btn listing-detail-carousel-btn--next"
+                      onClick={() => setGalleryIndex((i) => Math.min(images.length - 1, i + 1))}
+                      disabled={!canNext}
+                      aria-label="Image suivante"
+                    >
+                      ›
+                    </button>
+                  </>
+                )}
+              </div>
+              {images.length > 1 && (
+                <div className="listing-detail-dots" role="tablist" aria-label="Images">
+                  {images.map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === galleryIndex}
+                      aria-label={`Image ${i + 1}`}
+                      className={`listing-detail-dot ${i === galleryIndex ? "active" : ""}`}
+                      onClick={() => setGalleryIndex(i)}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
             <div className="img-placeholder" style={{ aspectRatio: "4/3", fontSize: "var(--text-3xl)" }}>
               {GAME_LABELS[listing.game]?.[0] ?? "?"}
-            </div>
-          )}
-          {hasImages && listing.images!.length > 1 && (
-            <div className="listing-detail-thumbs">
-              {listing.images!.map((img) => (
-                <div key={img.id} className="listing-detail-thumb">
-                  <img src={img.storageKey} alt="" loading="lazy" />
-                </div>
-              ))}
             </div>
           )}
         </div>
@@ -163,19 +225,16 @@ export function ListingDetail() {
           {/* Price block */}
           <div className="listing-detail-price-block">
             <div>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", display: "block", marginBottom: "var(--space-1)" }}>
-                Prix demande
-              </span>
+              <span className="listing-detail-price-label">Prix demandé</span>
               <PriceDisplay cents={listing.priceCents} currency={listing.currency} size="lg" deltaCents={listing.deltaCents} />
             </div>
-            {listing.marketPriceCents != null && (
-              <div style={{ textAlign: "right" }}>
-                <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)", display: "block", marginBottom: "var(--space-1)" }}>
-                  Cote marche
-                </span>
-                <PriceDisplay cents={listing.marketPriceCents} currency={listing.currency} size="md" />
-              </div>
-            )}
+            <PriceDeltaBadge
+              priceCents={listing.priceCents}
+              marketPriceCents={listing.marketPriceCents}
+              deltaCents={listing.deltaCents}
+              currency={listing.currency}
+              size="md"
+            />
           </div>
 
           {/* Description */}
@@ -195,13 +254,61 @@ export function ListingDetail() {
 
           <hr className="divider" />
 
-          {/* Seller info placeholder */}
-          <div style={{ fontSize: "var(--text-xs)", color: "var(--color-text-subtle)" }}>
-            Vendeur : {listing.userId.slice(0, 8)}...
+          {/* Seller info (backend does not return seller username yet) */}
+          <div className="listing-detail-seller">
+            Vendeur : {listing.userId.slice(0, 8)}…
             {listing.publishedAt && (
-              <> &middot; Publiee le {new Date(listing.publishedAt).toLocaleDateString("fr-FR")}</>
+              <> · Publiée le {new Date(listing.publishedAt).toLocaleDateString("fr-FR")}</>
             )}
           </div>
+
+          {/* Report listing */}
+          {hasAuth && listing.status === "PUBLISHED" && (
+            <div className="listing-detail-report">
+              {reportSent ? (
+                <p className="listing-detail-report-sent">Signalement envoyé.</p>
+              ) : reportOpen ? (
+                <div className="listing-detail-report-form">
+                  <label htmlFor="report-reason" className="sr-only">Raison du signalement</label>
+                  <textarea
+                    id="report-reason"
+                    className="input"
+                    rows={2}
+                    placeholder="Raison du signalement (obligatoire)"
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    maxLength={200}
+                  />
+                  <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={submitReport}
+                      disabled={!reportReason.trim() || reportSubmitting}
+                    >
+                      {reportSubmitting ? "Envoi…" : "Envoyer"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => { setReportOpen(false); setReportReason(""); }}
+                      disabled={reportSubmitting}
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setReportOpen(true)}
+                >
+                  Signaler cette annonce
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

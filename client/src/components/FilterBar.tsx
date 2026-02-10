@@ -19,10 +19,11 @@ interface FilterBarProps {
 }
 
 const SORT_OPTIONS = [
-  { value: "", label: "Plus recents" },
+  { value: "date_desc", label: "Plus récents" },
+  { value: "date_asc", label: "Plus anciens" },
   { value: "price_asc", label: "Prix croissant" },
-  { value: "price_desc", label: "Prix decroissant" },
-  { value: "oldest", label: "Plus anciens" },
+  { value: "price_desc", label: "Prix décroissant" },
+  { value: "delta_asc", label: "Meilleure affaire (bientôt)", disabled: true },
 ];
 
 export function FilterBar({ filters, onChange }: FilterBarProps) {
@@ -128,11 +129,13 @@ export function FilterBar({ filters, onChange }: FilterBarProps) {
           <select
             id="filter-sort"
             className="select"
-            value={filters.sort ?? ""}
+            value={filters.sort ?? "date_desc"}
             onChange={(e) => update("sort", e.target.value)}
           >
             {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value} disabled={"disabled" in o && o.disabled}>
+                {o.label}
+              </option>
             ))}
           </select>
         </div>

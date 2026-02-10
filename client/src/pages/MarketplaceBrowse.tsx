@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import { fetchWithAuth } from "../api";
 import type { Listing, PaginatedResponse } from "../types/marketplace";
 import type { Filters } from "../components/FilterBar";
 import {
   ListingCard,
-  ListingCardSkeleton,
+  ListingGridSkeleton,
   FilterBar,
   TrustBanner,
   EmptyState,
@@ -12,14 +13,56 @@ import {
   LoadMoreButton,
 } from "../components";
 
+/** Read filters from URL (single source of truth on mount / external link). */
+function filtersFromSearchParams(searchParams: URLSearchParams): Filters {
+  const search = searchParams.get("search") || undefined;
+  const game = searchParams.get("game") || undefined;
+  const category = searchParams.get("category") || undefined;
+  const language = searchParams.get("language") || undefined;
+  const condition = searchParams.get("condition") || undefined;
+  const sort = searchParams.get("sort") || undefined;
+  const minPrice = searchParams.get("minPrice");
+  const maxPrice = searchParams.get("maxPrice");
+  return {
+    search: search || undefined,
+    game: game as Filters["game"] || undefined,
+    category: category as Filters["category"] || undefined,
+    language: language as Filters["language"] || undefined,
+    condition: condition as Filters["condition"] || undefined,
+    sort: sort || undefined,
+    minPrice: minPrice != null && minPrice !== "" ? String(Number(minPrice) / 100) : undefined,
+    maxPrice: maxPrice != null && maxPrice !== "" ? String(Number(maxPrice) / 100) : undefined,
+  };
+}
+
+/** Write filters to URL (no cursor, so pagination resets). */
+function filtersToSearchParams(f: Filters): URLSearchParams {
+  const params = new URLSearchParams();
+  if (f.search) params.set("search", f.search);
+  if (f.game) params.set("game", f.game);
+  if (f.category) params.set("category", f.category);
+  if (f.language) params.set("language", f.language);
+  if (f.condition) params.set("condition", f.condition);
+  if (f.sort) params.set("sort", f.sort);
+  if (f.minPrice != null && f.minPrice !== "") params.set("minPrice", String(Number(f.minPrice) * 100));
+  if (f.maxPrice != null && f.maxPrice !== "") params.set("maxPrice", String(Number(f.maxPrice) * 100));
+  return params;
+}
+
 export function MarketplaceBrowse() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [listings, setListings] = useState<Listing[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>({});
+  const [filters, setFilters] = useState<Filters>(() => filtersFromSearchParams(searchParams));
   const [totalHint, setTotalHint] = useState<number | null>(null);
+
+  // Sync URL → filters when URL changes (e.g. navbar search, back button)
+  useEffect(() => {
+    setFilters(filtersFromSearchParams(searchParams));
+  }, [searchParams]);
 
   const buildQuery = useCallback((f: Filters, cursor?: string): string => {
     const params = new URLSearchParams();
@@ -28,9 +71,10 @@ export function MarketplaceBrowse() {
     if (f.language) params.set("language", f.language);
     if (f.condition) params.set("condition", f.condition);
     if (f.search) params.set("search", f.search);
-    if (f.sort) params.set("sort", f.sort);
-    if (f.minPrice) params.set("minPrice", String(Number(f.minPrice) * 100));
-    if (f.maxPrice) params.set("maxPrice", String(Number(f.maxPrice) * 100));
+    const sort = f.sort && f.sort !== "delta_asc" ? f.sort : "date_desc";
+    params.set("sort", sort);
+    if (f.minPrice != null && f.minPrice !== "") params.set("minPrice", String(Number(f.minPrice) * 100));
+    if (f.maxPrice != null && f.maxPrice !== "") params.set("maxPrice", String(Number(f.maxPrice) * 100));
     params.set("limit", "20");
     if (cursor) params.set("cursor", cursor);
     return params.toString();
@@ -75,9 +119,13 @@ export function MarketplaceBrowse() {
     return () => clearTimeout(timer);
   }, [filters, fetchListings]);
 
-  const handleFilterChange = useCallback((newFilters: Filters) => {
-    setFilters(newFilters);
-  }, []);
+  const handleFilterChange = useCallback(
+    (newFilters: Filters) => {
+      setFilters(newFilters);
+      setSearchParams(filtersToSearchParams(newFilters), { replace: true });
+    },
+    [setSearchParams],
+  );
 
   const handleLoadMore = useCallback(() => {
     if (nextCursor && !loadingMore) {
@@ -87,10 +135,17 @@ export function MarketplaceBrowse() {
 
   return (
     <section>
-      <h1 className="page-title">Marketplace</h1>
-      <p className="page-subtitle">
-        Trouvez la carte parfaite parmi les annonces de la communaute.
-      </p>
+      <div className="browse-header">
+        <div>
+          <h1 className="page-title">Marketplace</h1>
+          <p className="page-subtitle">
+            Trouvez la carte parfaite parmi les annonces de la communauté.
+          </p>
+        </div>
+        <Link to="/annonces/new" className="btn btn-primary browse-cta">
+          Vendre / Créer une annonce
+        </Link>
+      </div>
 
       <TrustBanner />
 
@@ -116,13 +171,7 @@ export function MarketplaceBrowse() {
       )}
 
       {/* Loading skeletons */}
-      {loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <ListingCardSkeleton key={i} />
-          ))}
-        </div>
-      )}
+      {loading && <ListingGridSkeleton />}
 
       {/* Empty state */}
       {!loading && !error && listings.length === 0 && (

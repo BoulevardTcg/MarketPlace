@@ -1,30 +1,46 @@
 import jwt from "jsonwebtoken";
-import { env } from "../config/env.js";
+import { env, getJwtPublicKey } from "../config/env.js";
 import type { AuthUser } from "./types.js";
 
+/** Normalise une clé PEM : remplace les littéraux \\n par de vrais retours à la ligne
+ *  (nécessaire quand Docker env_file ne convertit pas les \\n). */
+function normalizePem(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  return raw.includes("\\n") ? raw.replace(/\\n/g, "\n") : raw;
+}
+
 /**
- * JWT payload attendu (Shop / issuer).
+ * JWT payload attendu (Boutique / issuer).
  * - userId / sub : identifiant utilisateur
- * - roles : tableau de rôles pour requireRole(). req.user.roles est alimenté ici.
- *   Claim exact attendu : payload.roles (array de strings). Valeurs ex. "ADMIN", "SELLER".
- *   En prod : vérifier avec l'issuer (Shop) le claim réel (peut être realm_access.roles
- *   ou resource_access.<client>.roles selon Keycloak/OAuth). Adapter l'extraction si besoin.
+ * - roles : tableau de rôles (Boutique envoie roles: ['ADMIN'] si isAdmin)
+ * - isAdmin : si présent et roles absent, on déduit roles
+ * - username, firstName, email : pour GET /me et navbar
  */
 interface JwtPayload {
-  sub: string;
+  sub?: string;
   userId?: string;
   roles?: string[];
+  isAdmin?: boolean;
+  username?: string;
+  firstName?: string;
+  email?: string;
   [key: string]: unknown;
 }
 
+/**
+ * Options de vérification JWT.
+ * Règle stricte : si clé publique présente → UNIQUEMENT RS256 (pas de fallback HS256, évite alg confusion).
+ */
 function getVerifyOptions(): { key: string; algorithms: jwt.Algorithm[] } {
-  if (env.JWT_PUBLIC_KEY) {
-    return { key: env.JWT_PUBLIC_KEY, algorithms: ["RS256"] };
+  const pubKeyRaw = getJwtPublicKey();
+  const pubKey = normalizePem(pubKeyRaw);
+  if (pubKey) {
+    return { key: pubKey, algorithms: ["RS256"] };
   }
   if (env.JWT_SECRET) {
     return { key: env.JWT_SECRET, algorithms: ["HS256"] };
   }
-  throw new Error("JWT config missing: set JWT_PUBLIC_KEY (RS256) or JWT_SECRET (HS256)");
+  throw new Error("JWT config missing: set JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH (RS256) or JWT_SECRET (HS256)");
 }
 
 export function verifyToken(token: string): AuthUser {
@@ -34,8 +50,17 @@ export function verifyToken(token: string): AuthUser {
   if (!userId || typeof userId !== "string") {
     throw new Error("Invalid token: missing userId/sub");
   }
+  const roles = Array.isArray(payload.roles)
+    ? payload.roles
+    : payload.isAdmin === true
+      ? ["ADMIN"]
+      : undefined;
   return {
     userId,
-    roles: Array.isArray(payload.roles) ? payload.roles : undefined,
+    roles,
+    username: typeof payload.username === "string" ? payload.username : undefined,
+    firstName: typeof payload.firstName === "string" ? payload.firstName : undefined,
+    email: typeof payload.email === "string" ? payload.email : undefined,
+    isAdmin: !!payload.isAdmin,
   };
 }

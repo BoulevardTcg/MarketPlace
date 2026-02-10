@@ -25,10 +25,13 @@ services:
     restart: unless-stopped
     ports:
       - "8081:8081"
+    # Uniquement marketplace/server/.env — ne doit JAMAIS contenir JWT_PRIVATE_KEY (risque de fuite).
+    # Option plus propre : monter jwt_public.pem et utiliser JWT_PUBLIC_KEY_PATH (voir .env.example).
+    env_file:
+      - ./server/.env
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://boulevard:boulevard_dev@postgres:5432/boulevard_market
-      JWT_SECRET: dev-secret-change-me
       PORT: "8081"
     volumes:
       - ./server/src:/app/src

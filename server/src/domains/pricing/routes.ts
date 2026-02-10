@@ -168,6 +168,85 @@ router.get(
   }),
 );
 
+// POST /users/me/portfolio/snapshot — enregistre la valeur actuelle du portfolio (auth required)
+router.post(
+  "/users/me/portfolio/snapshot",
+  requireAuth,
+  profileGate,
+  asyncHandler(async (req, res) => {
+    const userId = (req as RequestWithUser).user.userId;
+    const source = PriceSource.CARDMARKET;
+
+    const items = await prisma.userCollection.findMany({
+      where: { userId },
+    });
+
+    let totalValueCents = 0;
+    let totalCostCents = 0;
+    let pnlValueCents = 0;
+    let pnlCostCents = 0;
+
+    if (items.length > 0) {
+      const pairs = [...new Set(items.map((i) => `${i.cardId}:${i.language}`))];
+      const refs = await prisma.externalProductRef.findMany({
+        where: {
+          source,
+          OR: pairs.map((p) => {
+            const [cardId, language] = p.split(":");
+            return { cardId, language: language as "FR" | "EN" | "JP" | "DE" | "ES" | "IT" | "OTHER" };
+          }),
+        },
+      });
+      const refByKey = new Map(refs.map((r) => [`${r.cardId}:${r.language ?? ""}`, r]));
+      const externalIds = [...new Set(refs.map((r) => r.externalProductId))];
+      const latestSnapshots = await Promise.all(
+        externalIds.map((externalProductId) =>
+          prisma.cardPriceSnapshot.findFirst({
+            where: { externalProductId, source },
+            orderBy: { capturedAt: "desc" },
+          }),
+        ),
+      );
+      const snapshotByExternalId = new Map(
+        externalIds.map((id, i) => [id, latestSnapshots[i]]),
+      );
+
+      for (const item of items) {
+        const key = `${item.cardId}:${item.language}`;
+        const ref = refByKey.get(key);
+        const snapshot = ref
+          ? snapshotByExternalId.get(ref.externalProductId) ?? null
+          : null;
+        if (snapshot) {
+          const value = item.quantity * snapshot.trendCents;
+          totalValueCents += value;
+          if (item.acquisitionPriceCents != null) {
+            const cost = item.quantity * item.acquisitionPriceCents;
+            totalCostCents += cost;
+            pnlValueCents += value;
+            pnlCostCents += cost;
+          }
+        } else if (item.acquisitionPriceCents != null) {
+          totalCostCents += item.quantity * item.acquisitionPriceCents;
+        }
+      }
+    }
+
+    const pnlCents = pnlValueCents - pnlCostCents;
+
+    await prisma.userPortfolioSnapshot.create({
+      data: {
+        userId,
+        totalValueCents,
+        totalCostCents,
+        pnlCents,
+      },
+    });
+
+    ok(res, { ok: true });
+  }),
+);
+
 // GET /users/me/portfolio/history — paginated portfolio snapshots (auth required)
 router.get(
   "/users/me/portfolio/history",

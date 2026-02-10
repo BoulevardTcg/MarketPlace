@@ -246,6 +246,9 @@ router.get(
       where,
       orderBy,
       take: limit + 1,
+      include: {
+        images: { orderBy: { sortOrder: "asc" }, take: 1 },
+      },
     });
 
     const page = buildPage(items, limit, (item) => ({
@@ -272,6 +275,9 @@ router.get(
 
     const listing = await prisma.listing.findUnique({
       where: { id: listingId },
+      include: {
+        images: { orderBy: { sortOrder: "asc" } },
+      },
     });
     if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
 
@@ -285,7 +291,16 @@ router.get(
     }
 
     const [enriched] = await enrichListingsWithMarketPrice([listing]);
-    ok(res, enriched);
+    let isFavorited = false;
+    if (userId) {
+      const fav = await prisma.favorite.findUnique({
+        where: {
+          userId_listingId: { userId, listingId },
+        },
+      });
+      isFavorited = !!fav;
+    }
+    ok(res, { ...enriched, isFavorited });
   }),
 );
 
@@ -330,6 +345,69 @@ router.get(
     }));
 
     ok(res, page);
+  }),
+);
+
+// GET /marketplace/me/sales/summary — monthly sales aggregation
+router.get(
+  "/marketplace/me/sales/summary",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = (req as RequestWithUser).user.userId;
+
+    // Fetch all SOLD listings for this user
+    const soldItems = await prisma.listing.findMany({
+      where: { userId, status: "SOLD" },
+      select: {
+        priceCents: true,
+        quantity: true,
+        soldAt: true,
+        game: true,
+        language: true,
+      },
+      orderBy: { soldAt: "asc" },
+    });
+
+    // Aggregate by month (YYYY-MM)
+    const monthlyMap = new Map<string, { revenueCents: number; count: number }>();
+    const byGameMap = new Map<string, { revenueCents: number; count: number }>();
+    let totalRevenueCents = 0;
+    let totalSold = 0;
+
+    for (const item of soldItems) {
+      const revenue = item.priceCents * item.quantity;
+      totalRevenueCents += revenue;
+      totalSold += item.quantity;
+
+      // Monthly
+      const dt = item.soldAt ?? new Date();
+      const monthKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+      const mEntry = monthlyMap.get(monthKey) ?? { revenueCents: 0, count: 0 };
+      mEntry.revenueCents += revenue;
+      mEntry.count += item.quantity;
+      monthlyMap.set(monthKey, mEntry);
+
+      // By game
+      const game = item.game;
+      const gEntry = byGameMap.get(game) ?? { revenueCents: 0, count: 0 };
+      gEntry.revenueCents += revenue;
+      gEntry.count += item.quantity;
+      byGameMap.set(game, gEntry);
+    }
+
+    const monthly = [...monthlyMap.entries()].map(([month, v]) => ({
+      month,
+      revenueCents: v.revenueCents,
+      count: v.count,
+    }));
+
+    const byGame = [...byGameMap.entries()].map(([game, v]) => ({
+      game,
+      revenueCents: v.revenueCents,
+      count: v.count,
+    }));
+
+    ok(res, { totalRevenueCents, totalSold, monthly, byGame });
   }),
 );
 

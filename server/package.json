@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "dev:db": "prisma generate && prisma migrate deploy",
@@ -16,7 +19,8 @@
     "test:setup": "node -e \"require('fs').mkdirSync('.db',{recursive:true})\" && cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" prisma generate --schema prisma/test/schema.prisma && cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" prisma migrate deploy --schema prisma/test/schema.prisma",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts"
   },
   "engines": {
     "node": ">=24"
