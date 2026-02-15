@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getApiUrl, fetchWithAuth } from "../api";
 import { useAuth } from "../hooks/useAuth";
+import { PageHeader } from "../components";
 
 type OfferItem = {
   id: string;
@@ -51,11 +52,17 @@ export function TradesInbox() {
 
   return (
     <section>
-      <h1 className="page-title">Mes échanges</h1>
-      <p className="page-subtitle">
-        Consultez vos offres reçues ou envoyées, répondez et négociez en toute confiance.
-      </p>
-
+      <PageHeader
+        title="Mes échanges"
+        subtitle="Consultez vos offres reçues ou envoyées, répondez et négociez en toute confiance."
+        action={
+          isAuthenticated ? (
+            <Link to="/trades/new" className="btn btn-primary">
+              Nouvelle offre
+            </Link>
+          ) : undefined
+        }
+      />
       {!isAuthenticated && (
         <div className="card card-body" style={{ marginBottom: "var(--space-4)" }}>
           <p style={{ margin: "0 0 var(--space-3)", color: "var(--color-text-muted)" }}>

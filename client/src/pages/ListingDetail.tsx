@@ -92,7 +92,7 @@ export function ListingDetail() {
   if (loading) {
     return (
       <section>
-        <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+        <Link to="/produits" className="back-link">&larr; Marketplace</Link>
         <div className="listing-detail-layout">
           <div className="listing-detail-gallery">
             <Skeleton variant="image" height="400px" />
@@ -112,7 +112,7 @@ export function ListingDetail() {
   if (error) {
     return (
       <section>
-        <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+        <Link to="/produits" className="back-link">&larr; Marketplace</Link>
         <ErrorState message={error} onRetry={fetchListing} />
       </section>
     );
@@ -128,7 +128,7 @@ export function ListingDetail() {
 
   return (
     <section>
-      <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+      <Link to="/produits" className="back-link">&larr; Marketplace</Link>
 
       <div className="listing-detail-layout">
         {/* Gallery / carousel */}

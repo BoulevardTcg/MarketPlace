@@ -8,6 +8,7 @@ import {
   ErrorState,
   EmptyState,
   Skeleton,
+  PageHeader,
 } from "../components";
 
 export function MyListings() {
@@ -59,28 +60,30 @@ export function MyListings() {
   if (!hasAuth) {
     return (
       <section className="card card-body">
-        <h1 className="page-title">Mes annonces</h1>
-        <p className="page-subtitle">
-          Connectez-vous pour voir et gérer vos annonces.
-        </p>
-        <Link to="/connexion" className="btn btn-primary">
-          Se connecter
-        </Link>
+        <PageHeader
+          title="Mes annonces"
+          subtitle="Connectez-vous pour voir et gérer vos annonces."
+          action={
+            <Link to="/connexion" className="btn btn-primary">
+              Se connecter
+            </Link>
+          }
+        />
       </section>
     );
   }
 
   return (
     <section className="my-listings-page">
-      <div className="my-listings-header">
-        <h1 className="page-title">Mes annonces</h1>
-        <p className="page-subtitle">
-          Gérez vos brouillons et annonces en ligne.
-        </p>
-        <Link to="/annonces/new" className="btn btn-primary">
-          Nouvelle annonce
-        </Link>
-      </div>
+      <PageHeader
+        title="Mes annonces"
+        subtitle="Gérez vos brouillons et annonces en ligne."
+        action={
+          <Link to="/annonces/new" className="btn btn-primary">
+            Nouvelle annonce
+          </Link>
+        }
+      />
 
       {loading && (
         <div className="my-listings-skeleton">

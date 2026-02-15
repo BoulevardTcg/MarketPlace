@@ -13,6 +13,8 @@ import {
   CONDITION_LABELS,
   CATEGORY_LABELS,
 } from "../types/marketplace";
+import { PageHeader, CardAutocomplete } from "../components";
+import { parseEurosToCents, parseQuantity } from "../utils/listing";
 
 /** Item de l'inventaire (collection) — permet de proposer un item en vente et lier l'annonce. */
 export interface CollectionItemForListing {
@@ -69,20 +71,6 @@ const defaultForm: CreateListingForm = {
   quantity: "1",
   publishNow: true,
 };
-
-function parseEurosToCents(value: string): number {
-  const cleaned = value.replace(",", ".").trim();
-  if (!cleaned) return 0;
-  const num = parseFloat(cleaned);
-  if (Number.isNaN(num) || num < 0) return 0;
-  return Math.round(num * 100);
-}
-
-function parseQuantity(value: string): number {
-  const n = parseInt(value, 10);
-  if (Number.isNaN(n) || n < 1) return 1;
-  return Math.min(n, 999);
-}
 
 export function CreateListing() {
   const location = useLocation();
@@ -229,13 +217,15 @@ export function CreateListing() {
   if (!hasAuth) {
     return (
       <section className="card card-body">
-        <h1 className="page-title">Créer une annonce</h1>
-        <p className="page-subtitle">
-          Connectez-vous pour déposer une annonce (carte, booster, accessoire).
-        </p>
-        <Link to="/connexion" className="btn btn-primary">
-          Se connecter
-        </Link>
+        <PageHeader
+          title="Créer une annonce"
+          subtitle="Connectez-vous pour déposer une annonce (carte, booster, accessoire)."
+          action={
+            <Link to="/connexion" className="btn btn-primary">
+              Se connecter
+            </Link>
+          }
+        />
       </section>
     );
   }
@@ -276,12 +266,10 @@ export function CreateListing() {
 
   return (
     <section className="create-listing-page">
-      <h1 className="page-title">Créer une annonce</h1>
-      <p className="page-subtitle">
-        Décrivez votre carte, booster ou accessoire. Un ou plusieurs exemplaires
-        — vous choisissez la quantité.
-      </p>
-
+      <PageHeader
+        title="Créer une annonce"
+        subtitle="Décrivez votre carte, booster ou accessoire. Un ou plusieurs exemplaires — vous choisissez la quantité."
+      />
       <form onSubmit={handleSubmit} className="card card-body create-listing-form">
         {error && (
           <div className="create-listing-error" role="alert">
@@ -313,6 +301,29 @@ export function CreateListing() {
             <p className="create-listing-hint create-listing-inventory-hint">
               Annonce liée à votre inventaire. À la vente, la quantité sera déduite automatiquement. Max. {selectedFromInventory.quantity} exemplaire{selectedFromInventory.quantity > 1 ? "s" : ""}.
             </p>
+          )}
+          {form.game === "POKEMON" && !selectedFromInventory && (
+            <div className="create-listing-field" style={{ marginTop: "1rem" }}>
+              <label>Rechercher une carte (Pokémon)</label>
+              <CardAutocomplete
+                placeholder="ex. Pikachu, Dracolosse…"
+                aria-label="Recherche de carte Pokémon pour l'annonce"
+                onSelect={({ cardId, cardName, setCode, setName, pricing }) => {
+                  const suggested = pricing?.cardmarket?.avg ?? pricing?.cardmarket?.low;
+                  setForm((prev) => ({
+                    ...prev,
+                    cardId,
+                    cardName,
+                    setCode: setCode ?? setName ?? prev.setCode,
+                    title: prev.title || cardName || prev.title,
+                    priceEuros:
+                      prev.priceEuros ||
+                      (suggested != null ? suggested.toFixed(2).replace(".", ",") : prev.priceEuros),
+                  }));
+                  setError(null);
+                }}
+              />
+            </div>
           )}
         </div>
 

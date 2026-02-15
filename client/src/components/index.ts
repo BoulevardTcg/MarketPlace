@@ -1,4 +1,6 @@
 export { Skeleton } from "./Skeleton";
+export { CardAutocomplete } from "./CardAutocomplete";
+export { CardPriceCharts } from "./CardPriceCharts";
 export { EmptyState } from "./EmptyState";
 export { ErrorState } from "./ErrorState";
 export { Badge } from "./Badge";
@@ -10,4 +12,6 @@ export { ListingCard, ListingCardSkeleton, ListingGridSkeleton } from "./Listing
 export { FilterBar } from "./FilterBar";
 export { FilterBar as FiltersPanel } from "./FilterBar";
 export { SortSelect } from "./SortSelect";
+export { PageHeader } from "./ui/PageHeader";
 export type { Filters } from "./FilterBar";
+export type { PageHeaderProps } from "./ui/PageHeader";

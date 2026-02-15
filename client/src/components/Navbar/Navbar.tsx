@@ -22,7 +22,6 @@ const NAV_LINKS = [
   { label: "Accueil", path: "/" },
   { label: "Marketplace", path: "/produits" },
   { label: "Mes annonces", path: "/annonces" },
-  { label: "Inventaire", path: "/inventaire" },
   { label: "Portfolio", path: "/portfolio" },
   { label: "Échanges", path: "/trade" },
 ] as const;

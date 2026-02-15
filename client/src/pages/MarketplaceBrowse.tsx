@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorState,
   LoadMoreButton,
+  PageHeader,
 } from "../components";
 
 /** Read filters from URL (single source of truth on mount / external link). */
@@ -135,18 +136,15 @@ export function MarketplaceBrowse() {
 
   return (
     <section>
-      <div className="browse-header">
-        <div>
-          <h1 className="page-title">Marketplace</h1>
-          <p className="page-subtitle">
-            Trouvez la carte parfaite parmi les annonces de la communauté.
-          </p>
-        </div>
-        <Link to="/annonces/new" className="btn btn-primary browse-cta">
-          Vendre / Créer une annonce
-        </Link>
-      </div>
-
+      <PageHeader
+        title="Marketplace"
+        subtitle="Trouvez la carte parfaite parmi les annonces de la communauté."
+        action={
+          <Link to="/annonces/new" className="btn btn-primary">
+            Vendre / Créer une annonce
+          </Link>
+        }
+      />
       <TrustBanner />
 
       <FilterBar filters={filters} onChange={handleFilterChange} />
