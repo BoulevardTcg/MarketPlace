@@ -783,6 +783,41 @@ describe("Marketplace", () => {
       expect(res.status).toBe(400);
     });
 
+    it("POST attach returns 400 when storageKey belongs to another listing", async () => {
+      const token = makeToken("owner-1");
+      const createA = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Listing A",
+          priceCents: 500,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const createB = await request(app)
+        .post("/marketplace/listings")
+        .set("Authorization", `Bearer ${token}`)
+        .send({
+          title: "Listing B",
+          priceCents: 600,
+          game: "POKEMON",
+          category: "CARD",
+          language: "FR",
+          condition: "NM",
+        });
+      const listingAId = createA.body.data.listingId;
+      const listingBId = createB.body.data.listingId;
+      const storageKeyForB = `listings/${listingBId}/550e8400-e29b-41d4-a716-446655440000.jpg`;
+      const res = await request(app)
+        .post(`/marketplace/listings/${listingAId}/images/attach`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ storageKey: storageKeyForB, sortOrder: 0 });
+      expect(res.status).toBe(400);
+      expect(res.body.error?.code).toBe("INVALID_STORAGE_KEY");
+    });
+
     it("POST attach returns 409 when listing has max 8 images", async () => {
       const token = makeToken("owner-1");
       const createRes = await request(app)

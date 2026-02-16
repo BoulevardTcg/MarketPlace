@@ -261,6 +261,52 @@ export async function getCardBoulevardHistory(
   return body?.data !== undefined ? body.data : body;
 }
 
+// --- Market daily price history (Marketplace API) ---
+
+export interface DailyPricePoint {
+  day: string;
+  trendCents: number;
+  lowCents?: number | null;
+  avgCents?: number | null;
+  highCents?: number | null;
+}
+
+export interface DailyPriceHistoryStats {
+  firstDay: string | null;
+  lastDay: string | null;
+  lastTrendCents: number | null;
+  minTrendCents: number | null;
+  maxTrendCents: number | null;
+}
+
+export interface DailyPriceHistoryResponse {
+  series: DailyPricePoint[];
+  stats: DailyPriceHistoryStats;
+}
+
+export async function getMarketDailyHistory(
+  cardId: string,
+  params: { language: string; days?: number; source?: string },
+  signal?: AbortSignal,
+): Promise<DailyPriceHistoryResponse> {
+  const search = new URLSearchParams({
+    language: params.language,
+    days: String(params.days ?? 30),
+  });
+  if (params.source) search.set("source", params.source);
+
+  const res = await fetch(
+    `${MARKET_BASE}/cards/${encodeURIComponent(cardId)}/price/history?${search}`,
+    { signal },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body?.data !== undefined ? body.data : body;
+}
+
 export type CreateSaleTransactionPayload = {
   lang: string;
   price: number;

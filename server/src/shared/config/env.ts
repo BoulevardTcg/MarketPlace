@@ -29,6 +29,10 @@ const envSchema = z.object({
   /** Chemin vers le fichier PEM de la clé publique (alternative à JWT_PUBLIC_KEY, évite PEM dans l'env). */
   JWT_PUBLIC_KEY_PATH: z.string().optional(),
   JWT_SECRET: z.string().optional(),
+  /** Issuer attendu du JWT (ex. URL du Shop). Si défini, jwt.verify rejette les tokens dont iss ne correspond pas. */
+  JWT_ISSUER: z.string().min(1).optional(),
+  /** Liste d'IDs utilisateur autorisés comme ADMIN (séparés par des virgules). Si défini, requireRole("ADMIN") exige userId dans cette liste en plus du rôle JWT. */
+  ADMIN_USER_IDS: z.string().optional(),
   CORS_ORIGIN: z.string().optional(),
   /** S3 bucket for listing images (presigned upload). If unset, presigned-upload returns 503. */
   LISTING_IMAGES_BUCKET: z.string().optional(),

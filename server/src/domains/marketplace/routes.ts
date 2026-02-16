@@ -489,7 +489,12 @@ router.patch(
         data: {
           ...fields,
           ...(attributesJson !== undefined
-            ? { attributesJson: attributesJson as Prisma.InputJsonValue | null }
+            ? {
+                attributesJson:
+                  attributesJson === null
+                    ? Prisma.JsonNull
+                    : (attributesJson as Prisma.InputJsonValue),
+              }
             : {}),
         },
       });
@@ -873,6 +878,16 @@ router.post(
     const userId = (req as RequestWithUser).user.userId;
     await getListingAsOwner(listingId, userId);
     const body = attachImageBodySchema.parse(req.body ?? {});
+
+    // Security: storageKey must belong to this listing (prevent attaching another listing's image)
+    const expectedPrefix = `listings/${listingId}/`;
+    if (!body.storageKey.startsWith(expectedPrefix)) {
+      throw new AppError(
+        "INVALID_STORAGE_KEY",
+        "storageKey must belong to this listing",
+        400,
+      );
+    }
 
     const count = await prisma.listingImage.count({ where: { listingId } });
     if (count >= MAX_IMAGES_PER_LISTING) {

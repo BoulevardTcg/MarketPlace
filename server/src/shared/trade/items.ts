@@ -18,11 +18,11 @@ const VALID_LANGUAGES: Language[] = [
 ];
 const VALID_CONDITIONS: CardCondition[] = ["NM", "LP", "MP", "HP", "DMG"];
 
-function isLanguage(s: string): s is Language {
-  return VALID_LANGUAGES.includes(s as Language);
+function isLanguage(s: unknown): s is Language {
+  return typeof s === "string" && VALID_LANGUAGES.includes(s as Language);
 }
-function isCondition(s: string): s is CardCondition {
-  return VALID_CONDITIONS.includes(s as CardCondition);
+function isCondition(s: unknown): s is CardCondition {
+  return typeof s === "string" && VALID_CONDITIONS.includes(s as CardCondition);
 }
 
 /**

@@ -30,22 +30,31 @@ interface JwtPayload {
 /**
  * Options de vérification JWT.
  * Règle stricte : si clé publique présente → UNIQUEMENT RS256 (pas de fallback HS256, évite alg confusion).
+ * Si JWT_ISSUER est défini, seuls les tokens avec iss correspondant sont acceptés.
  */
-function getVerifyOptions(): { key: string; algorithms: jwt.Algorithm[] } {
+function getVerifyOptions(): { key: string; algorithms: jwt.Algorithm[]; issuer?: string } {
   const pubKeyRaw = getJwtPublicKey();
   const pubKey = normalizePem(pubKeyRaw);
   if (pubKey) {
-    return { key: pubKey, algorithms: ["RS256"] };
+    return {
+      key: pubKey,
+      algorithms: ["RS256"],
+      ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
+    };
   }
   if (env.JWT_SECRET) {
-    return { key: env.JWT_SECRET, algorithms: ["HS256"] };
+    return {
+      key: env.JWT_SECRET,
+      algorithms: ["HS256"],
+      ...(env.JWT_ISSUER ? { issuer: env.JWT_ISSUER } : {}),
+    };
   }
   throw new Error("JWT config missing: set JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH (RS256) or JWT_SECRET (HS256)");
 }
 
 export function verifyToken(token: string): AuthUser {
-  const { key, algorithms } = getVerifyOptions();
-  const payload = jwt.verify(token, key, { algorithms }) as JwtPayload;
+  const { key, algorithms, issuer } = getVerifyOptions();
+  const payload = jwt.verify(token, key, { algorithms, ...(issuer ? { issuer } : {}) }) as JwtPayload;
   const userId = payload.userId ?? payload.sub;
   if (!userId || typeof userId !== "string") {
     throw new Error("Invalid token: missing userId/sub");

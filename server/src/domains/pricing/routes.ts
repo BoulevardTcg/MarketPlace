@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { PriceSource, Language } from "@prisma/client";
+import { Prisma, PriceSource, Language } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
@@ -8,6 +8,7 @@ import { AppError } from "../../shared/http/response.js";
 import { prisma } from "../../shared/db/prisma.js";
 import { env } from "../../shared/config/env.js";
 import { requireProfile } from "../../shared/auth/requireProfile.js";
+import { computePortfolioValue } from "../../shared/pricing/portfolio.js";
 import type { Request, Response, NextFunction } from "express";
 import {
   paginationQuerySchema,
@@ -28,6 +29,12 @@ const profileGate =
 const priceQuerySchema = z.object({
   language: z.nativeEnum(Language),
   source: z.nativeEnum(PriceSource).default(PriceSource.CARDMARKET),
+});
+
+const priceHistoryQuerySchema = z.object({
+  language: z.nativeEnum(Language),
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  source: z.nativeEnum(PriceSource).default(PriceSource.TCGDEX),
 });
 
 const portfolioHistoryQuerySchema = paginationQuerySchema.extend({
@@ -71,6 +78,59 @@ router.get(
   }),
 );
 
+// GET /cards/:cardId/price/history — daily price history for a card
+router.get(
+  "/cards/:cardId/price/history",
+  asyncHandler(async (req, res) => {
+    const cardId = req.params.cardId;
+    const query = priceHistoryQuerySchema.parse(req.query);
+    const { language, days, source } = query;
+
+    const since = new Date();
+    since.setUTCDate(since.getUTCDate() - days);
+    since.setUTCHours(0, 0, 0, 0);
+
+    const snapshots = await prisma.dailyPriceSnapshot.findMany({
+      where: {
+        cardId,
+        language,
+        source,
+        day: { gte: since },
+      },
+      orderBy: { day: "asc" },
+      select: {
+        day: true,
+        trendCents: true,
+        lowCents: true,
+        avgCents: true,
+        highCents: true,
+      },
+    });
+
+    const series = snapshots.map((s) => ({
+      day: s.day.toISOString().slice(0, 10),
+      trendCents: s.trendCents,
+      lowCents: s.lowCents,
+      avgCents: s.avgCents,
+      highCents: s.highCents,
+    }));
+
+    const trendValues = snapshots
+      .map((s) => s.trendCents)
+      .filter((v): v is number => v != null);
+
+    const stats = {
+      firstDay: series.length > 0 ? series[0].day : null,
+      lastDay: series.length > 0 ? series[series.length - 1].day : null,
+      lastTrendCents: trendValues.length > 0 ? trendValues[trendValues.length - 1] : null,
+      minTrendCents: trendValues.length > 0 ? Math.min(...trendValues) : null,
+      maxTrendCents: trendValues.length > 0 ? Math.max(...trendValues) : null,
+    };
+
+    ok(res, { series, stats });
+  }),
+);
+
 // GET /users/me/portfolio — computed portfolio value (auth required)
 router.get(
   "/users/me/portfolio",
@@ -78,93 +138,8 @@ router.get(
   profileGate,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
-    const source = PriceSource.CARDMARKET;
-
-    const items = await prisma.userCollection.findMany({
-      where: { userId },
-    });
-
-    const itemCount = items.length;
-    if (itemCount === 0) {
-      return ok(res, {
-        totalValueCents: 0,
-        totalCostCents: 0,
-        pnlCents: 0,
-        currency: "EUR",
-        itemCount: 0,
-        valuedCount: 0,
-        missingCount: 0,
-      });
-    }
-
-    const pairs = [...new Set(items.map((i) => `${i.cardId}:${i.language}`))];
-    const refs = await prisma.externalProductRef.findMany({
-      where: {
-        source,
-        OR: pairs.map((p) => {
-          const [cardId, language] = p.split(":");
-          return { cardId, language: language as "FR" | "EN" | "JP" | "DE" | "ES" | "IT" | "OTHER" };
-        }),
-      },
-    });
-    const refByKey = new Map(refs.map((r) => [`${r.cardId}:${r.language ?? ""}`, r]));
-
-    const externalIds = [...new Set(refs.map((r) => r.externalProductId))];
-    const latestSnapshots = await Promise.all(
-      externalIds.map((externalProductId) =>
-        prisma.cardPriceSnapshot.findFirst({
-          where: { externalProductId, source },
-          orderBy: { capturedAt: "desc" },
-        }),
-      ),
-    );
-    const snapshotByExternalId = new Map(
-      externalIds.map((id, i) => [id, latestSnapshots[i]]),
-    );
-
-    let totalValueCents = 0;
-    let totalCostCents = 0;
-    let pnlValueCents = 0;
-    let pnlCostCents = 0;
-    let valuedCount = 0;
-    let missingCount = 0;
-
-    for (const item of items) {
-      const key = `${item.cardId}:${item.language}`;
-      const ref = refByKey.get(key);
-      const snapshot = ref
-        ? snapshotByExternalId.get(ref.externalProductId) ?? null
-        : null;
-
-      if (snapshot) {
-        valuedCount += 1;
-        const value = item.quantity * snapshot.trendCents;
-        totalValueCents += value;
-        if (item.acquisitionPriceCents != null) {
-          const cost = item.quantity * item.acquisitionPriceCents;
-          totalCostCents += cost;
-          pnlValueCents += value;
-          pnlCostCents += cost;
-        }
-      } else {
-        missingCount += 1;
-        if (item.acquisitionPriceCents != null) {
-          totalCostCents += item.quantity * item.acquisitionPriceCents;
-        }
-      }
-    }
-
-    const pnlCents = pnlValueCents - pnlCostCents;
-
-    ok(res, {
-      totalValueCents,
-      totalCostCents,
-      pnlCents,
-      currency: "EUR",
-      itemCount,
-      valuedCount,
-      missingCount,
-    });
+    const portfolio = await computePortfolioValue(userId);
+    ok(res, { ...portfolio, currency: "EUR" });
   }),
 );
 
@@ -175,72 +150,10 @@ router.post(
   profileGate,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
-    const source = PriceSource.CARDMARKET;
-
-    const items = await prisma.userCollection.findMany({
-      where: { userId },
-    });
-
-    let totalValueCents = 0;
-    let totalCostCents = 0;
-    let pnlValueCents = 0;
-    let pnlCostCents = 0;
-
-    if (items.length > 0) {
-      const pairs = [...new Set(items.map((i) => `${i.cardId}:${i.language}`))];
-      const refs = await prisma.externalProductRef.findMany({
-        where: {
-          source,
-          OR: pairs.map((p) => {
-            const [cardId, language] = p.split(":");
-            return { cardId, language: language as "FR" | "EN" | "JP" | "DE" | "ES" | "IT" | "OTHER" };
-          }),
-        },
-      });
-      const refByKey = new Map(refs.map((r) => [`${r.cardId}:${r.language ?? ""}`, r]));
-      const externalIds = [...new Set(refs.map((r) => r.externalProductId))];
-      const latestSnapshots = await Promise.all(
-        externalIds.map((externalProductId) =>
-          prisma.cardPriceSnapshot.findFirst({
-            where: { externalProductId, source },
-            orderBy: { capturedAt: "desc" },
-          }),
-        ),
-      );
-      const snapshotByExternalId = new Map(
-        externalIds.map((id, i) => [id, latestSnapshots[i]]),
-      );
-
-      for (const item of items) {
-        const key = `${item.cardId}:${item.language}`;
-        const ref = refByKey.get(key);
-        const snapshot = ref
-          ? snapshotByExternalId.get(ref.externalProductId) ?? null
-          : null;
-        if (snapshot) {
-          const value = item.quantity * snapshot.trendCents;
-          totalValueCents += value;
-          if (item.acquisitionPriceCents != null) {
-            const cost = item.quantity * item.acquisitionPriceCents;
-            totalCostCents += cost;
-            pnlValueCents += value;
-            pnlCostCents += cost;
-          }
-        } else if (item.acquisitionPriceCents != null) {
-          totalCostCents += item.quantity * item.acquisitionPriceCents;
-        }
-      }
-    }
-
-    const pnlCents = pnlValueCents - pnlCostCents;
+    const { totalValueCents, totalCostCents, pnlCents } = await computePortfolioValue(userId);
 
     await prisma.userPortfolioSnapshot.create({
-      data: {
-        userId,
-        totalValueCents,
-        totalCostCents,
-        pnlCents,
-      },
+      data: { userId, totalValueCents, totalCostCents, pnlCents },
     });
 
     ok(res, { ok: true });
@@ -263,7 +176,7 @@ router.get(
     else if (range === "30d") rangeStart.setDate(rangeStart.getDate() - 30);
     else rangeStart.setDate(rangeStart.getDate() - 90);
 
-    const where: Parameters<typeof prisma.userPortfolioSnapshot.findMany>[0]["where"] = {
+    const where: Prisma.UserPortfolioSnapshotWhereInput = {
       userId,
       capturedAt: { gte: rangeStart },
     };

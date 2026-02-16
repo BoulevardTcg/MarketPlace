@@ -38,6 +38,7 @@ npm test                  # Vitest (SQLite)
 npm run prisma:generate   # Génère le client Prisma
 npm run prisma:migrate    # Migrations
 npm run prisma:studio     # Prisma Studio
+npm run job:tcgdex        # Job manuel : snapshot prix TCGdex du jour
 ```
 
 **Dans `client/` :**
@@ -69,17 +70,23 @@ MarketPlace/                  # Monorepo
 │   │   │   ├── handover/     # Vérification anti-fake
 │   │   │   ├── upload/       # OCR/IA (stub)
 │   │   │   └── trust/        # Reports, modération, réputation
+│   │   ├── jobs/            # Scripts standalone (pas de cron intégré)
+│   │   │   ├── importCardmarketPriceGuide.ts  # Import CSV Cardmarket
+│   │   │   └── tcgdexDailySnapshot.ts         # Snapshot prix quotidien TCGdex
 │   │   └── shared/
 │   │       ├── auth/         # jwt, requireAuth, optionalAuth, requireRole, requireNotBanned, requireProfile
 │   │       ├── config/       # env (Zod validated)
 │   │       ├── db/           # Prisma client (PostgreSQL prod/dev, SQLite test)
 │   │       ├── http/         # asyncHandler, errorHandler, response, pagination
 │   │       ├── observability/# logger, httpLogger, requestId
+│   │       ├── pricing/      # tcgdexClient (fetch prix TCGdex API)
 │   │       ├── storage/      # S3 presigned URLs
 │   │       └── trade/        # items parser, expiration helpers
 │   └── prisma/
 │       ├── schema.prisma     # PostgreSQL
-│       └── test/schema.prisma # SQLite tests
+│       └── test/
+│           ├── schema.prisma # SQLite tests
+│           └── migrations/   # Migrations SQLite (séparées de PG)
 └── client/                   # Frontend (Vite + React + TypeScript)
     ├── src/
     │   ├── main.tsx
@@ -99,7 +106,7 @@ Each feature lives in `src/domains/<name>/routes.ts`. Add new domains following 
 |--------|---------|-------------|
 | `health` | `/health` | Health check |
 | `auth` | `/me` | Identité JWT (GET /me) |
-| `pricing` | `/cards`, `/users/me/portfolio` | Prix marché (réf. externes), portfolio utilisateur |
+| `pricing` | `/cards`, `/users/me/portfolio` | Prix marché (réf. externes), historique prix journalier, portfolio utilisateur |
 | `marketplace` | `/marketplace` | Listings CRUD, images, favoris, recherche |
 | `trade` | `/trade` | Offres d'échange, accept/reject/counter, messages, read state |
 | `collection` | `/collection` | Inventaire cartes utilisateur (+ vue publique `/users/:id/collection`) |
@@ -157,8 +164,9 @@ throw new AppError("NOT_FOUND", "Listing not found", 404);
 - **UserCollection**: User's card inventory (unique: userId + cardId + language + condition). `isPublic` controls visibility. Optional acquisition tracking: `acquiredAt`, `acquisitionPriceCents`, `acquisitionCurrency`.
 
 **Pricing & Portfolio (external market data):**
-- **ExternalProductRef**: Maps (cardId, language) to external source product IDs (Cardmarket/TCGPlayer). Unique per (source, externalProductId).
-- **CardPriceSnapshot**: Price data from external sources (trendCents, avgCents, lowCents, capturedAt). Indexed by externalProductId + capturedAt.
+- **ExternalProductRef**: Maps (cardId, language) to external source product IDs (Cardmarket/TCGPlayer/TCGdex). Unique per (source, externalProductId). Sources: `CARDMARKET`, `TCGPLAYER`, `TCGDEX`.
+- **CardPriceSnapshot**: Price data from external sources (trendCents, avgCents, lowCents, capturedAt). Indexed by externalProductId + capturedAt. Utilisé par l'import CSV Cardmarket.
+- **DailyPriceSnapshot**: **1 point/jour/carte/langue/source**. Champs: cardId, language, source (défaut TCGDEX), day (date UTC sans heure), trendCents, lowCents, avgCents, highCents (nullable), rawJson (optional). Unique: `(cardId, language, source, day)`. Index: `(cardId, language, day DESC)`. Alimenté par le job `tcgdexDailySnapshot`. Exposé via `GET /cards/:cardId/price/history`.
 - **UserPortfolioSnapshot**: Historical daily snapshots of a user's portfolio value (totalValueCents, totalCostCents, pnlCents).
 
 **Profiles & Analytics:**
@@ -187,6 +195,38 @@ beforeEach(async () => { await resetDb(prisma); });
 ```
 
 Run a single test file: `npx vitest run src/domains/marketplace/routes.test.ts`
+
+**Dual migrations**: Les migrations PostgreSQL sont dans `prisma/migrations/`, les migrations SQLite (test) dans `prisma/test/migrations/`. Lors d'un ajout de modèle, il faut créer la migration dans les deux dossiers (SQL PG vs SQL SQLite : pas de `CREATE TYPE`, `JSONB` → `TEXT`, `TIMESTAMP(3)` → `DATETIME`, `@db.Date` → `DATETIME`). Après ajout, régénérer les deux clients :
+```bash
+npx prisma generate                                                    # Production (PG)
+npx cross-env DATABASE_URL="file:./.db/test.db" prisma generate --schema prisma/test/schema.prisma  # Test (SQLite)
+```
+
+## Jobs (standalone scripts)
+
+Les jobs sont des scripts standalone dans `src/jobs/`, lancés manuellement ou via cron externe. Ils ne sont pas intégrés au serveur Express.
+
+| Job | Commande | Description |
+|-----|----------|-------------|
+| `importCardmarketPriceGuide` | `npx tsx src/jobs/importCardmarketPriceGuide.ts <csv>` | Import bulk CSV Cardmarket → ExternalProductRef + CardPriceSnapshot |
+| `tcgdexDailySnapshot` | `npm run job:tcgdex` | Snapshot prix quotidien TCGdex → DailyPriceSnapshot |
+
+### Job TCGdex (`tcgdexDailySnapshot`)
+
+1. Collecte les paires (cardId, language) distinctes depuis UserCollection et Listing (PUBLISHED/SOLD)
+2. Fallback: ExternalProductRef source=TCGDEX si aucune carte trouvée
+3. Pour chaque paire, appelle `https://api.tcgdex.net/v2/{lang}/cards/{cardId}`
+4. Mappe les prix Cardmarket (EUR décimal → cents entier) : trend, low, avg
+5. Upsert DailyPriceSnapshot du jour (UTC midnight). Si déjà existant, update.
+6. Rate-limit: 200ms entre chaque requête API
+7. Logs: nombre de success/skipped/failed
+
+**Client TCGdex** : `src/shared/pricing/tcgdexClient.ts` — fetch + parse + conversion cents. Timeout 10s.
+
+**Endpoint historique** : `GET /cards/:cardId/price/history`
+- Query: `language` (requis, enum Language), `days` (optionnel, défaut 30, max 365), `source` (optionnel, défaut TCGDEX)
+- Réponse: `{ data: { series: [...], stats: { firstDay, lastDay, lastTrendCents, minTrendCents, maxTrendCents } } }`
+- Les jours sans données ne sont pas inventés (pas de remplissage).
 
 ## Authentication
 

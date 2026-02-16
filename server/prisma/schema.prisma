@@ -438,6 +438,7 @@ model UserActiveProfile {
 enum PriceSource {
   CARDMARKET
   TCGPLAYER
+  TCGDEX
 }
 
 model ExternalProductRef {
@@ -465,6 +466,23 @@ model CardPriceSnapshot {
 
   @@index([externalProductId, capturedAt])
   @@index([source, capturedAt])
+}
+
+model DailyPriceSnapshot {
+  id          String      @id @default(cuid())
+  cardId      String
+  language    Language
+  source      PriceSource @default(TCGDEX)
+  day         DateTime    @db.Date
+  capturedAt  DateTime    @default(now())
+  trendCents  Int
+  lowCents    Int?
+  avgCents    Int?
+  highCents   Int?
+  rawJson     Json?
+
+  @@unique([cardId, language, source, day])
+  @@index([cardId, language, day(sort: Desc)])
 }
 
 model UserPortfolioSnapshot {

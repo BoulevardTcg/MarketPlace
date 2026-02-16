@@ -198,7 +198,6 @@ export function PortfolioDashboard() {
   const [range, setRange] = useState<Range>("30d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
 
   // Inventaire (collection) — chargé une fois le portfolio dispo
   const [collectionItems, setCollectionItems] = useState<CollectionItem[]>([]);
@@ -312,16 +311,6 @@ export function PortfolioDashboard() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  const handleSnapshot = async () => {
-    setSnapshotLoading(true);
-    try {
-      const res = await fetchWithAuth("/users/me/portfolio/snapshot", { method: "POST" });
-      if (res.ok) await fetchData();
-    } finally {
-      setSnapshotLoading(false);
-    }
-  };
 
   useEffect(() => {
     if (portfolio) loadCollection();
@@ -649,11 +638,11 @@ export function PortfolioDashboard() {
 
         <ChartCard
           title="Valeur vs investissement"
-          subtitle="Évolution de la valeur actuelle (cote) et du montant investi dans le temps, d'après vos snapshots."
+          subtitle="Un point est créé à chaque ajout ou modification de carte dans l'inventaire."
           className="chart-full"
         >
           {portfolioChartData.length < 2 ? (
-            <EmptyChart message="Enregistrez au moins 2 snapshots pour voir l'évolution." />
+            <EmptyChart message="Ajoutez des cartes à votre collection pour voir l'évolution." />
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={portfolioChartData}>
@@ -695,7 +684,7 @@ export function PortfolioDashboard() {
             subtitle="Différence entre valeur (cote) et montant investi à chaque snapshot."
           >
             {portfolioChartData.length < 2 ? (
-              <EmptyChart message="Pas assez de données. Enregistrez des snapshots." />
+              <EmptyChart message="Ajoutez des cartes pour voir l'évolution du gain/perte." />
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={portfolioChartData}>
@@ -731,7 +720,7 @@ export function PortfolioDashboard() {
             subtitle="Même données que le graphique ci-dessus, vue compacte. Données historiques uniquement (pas de CA)."
           >
             {portfolioChartData.length < 2 ? (
-              <EmptyChart message="Pas assez de données. Enregistrez des snapshots." />
+              <EmptyChart message="Ajoutez des cartes pour voir l'évolution." />
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={portfolioChartData}>
@@ -1075,18 +1064,10 @@ export function PortfolioDashboard() {
         <div className="portfolio-actions-bar-inner">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn btn-primary"
             onClick={() => { setShowAddForm(!showAddForm); setAddError(null); }}
           >
             {showAddForm ? "Annuler l'ajout" : "Ajouter une carte"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={snapshotLoading}
-            onClick={handleSnapshot}
-          >
-            {snapshotLoading ? "Enregistrement…" : "Enregistrer un snapshot"}
           </button>
         </div>
       </footer>

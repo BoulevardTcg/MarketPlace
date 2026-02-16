@@ -186,6 +186,126 @@ describe("Pricing", () => {
     expect(res.status).toBe(401);
   });
 
+  // ─── GET /cards/:cardId/price/history ──────────────────────────
+
+  it("GET /cards/:cardId/price/history returns 200 with empty series when no data", async () => {
+    const res = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "FR" });
+    expect(res.status).toBe(200);
+    expect(res.body.data.series).toEqual([]);
+    expect(res.body.data.stats.firstDay).toBe(null);
+    expect(res.body.data.stats.lastDay).toBe(null);
+  });
+
+  it("GET /cards/:cardId/price/history returns series sorted by day asc", async () => {
+    const day1 = new Date("2026-02-10T00:00:00.000Z");
+    const day2 = new Date("2026-02-11T00:00:00.000Z");
+    const day3 = new Date("2026-02-12T00:00:00.000Z");
+
+    await prisma.dailyPriceSnapshot.createMany({
+      data: [
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day2, trendCents: 200, lowCents: 180, avgCents: 190 },
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day1, trendCents: 100, lowCents: 90, avgCents: 95 },
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day3, trendCents: 300, lowCents: 280, avgCents: 290 },
+      ],
+    });
+
+    const res = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "FR", days: 30 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.series).toHaveLength(3);
+    expect(res.body.data.series[0].day).toBe("2026-02-10");
+    expect(res.body.data.series[1].day).toBe("2026-02-11");
+    expect(res.body.data.series[2].day).toBe("2026-02-12");
+    expect(res.body.data.series[0].trendCents).toBe(100);
+    expect(res.body.data.series[2].trendCents).toBe(300);
+  });
+
+  it("GET /cards/:cardId/price/history respects days param", async () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const recent = new Date(today);
+    recent.setUTCDate(recent.getUTCDate() - 5);
+
+    const old = new Date(today);
+    old.setUTCDate(old.getUTCDate() - 15);
+
+    await prisma.dailyPriceSnapshot.createMany({
+      data: [
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: recent, trendCents: 200 },
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: old, trendCents: 100 },
+      ],
+    });
+
+    const res = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "FR", days: 7 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.series).toHaveLength(1);
+    expect(res.body.data.series[0].trendCents).toBe(200);
+  });
+
+  it("GET /cards/:cardId/price/history filters by language", async () => {
+    const day = new Date("2026-02-10T00:00:00.000Z");
+
+    await prisma.dailyPriceSnapshot.createMany({
+      data: [
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day, trendCents: 100 },
+        { cardId: "card-1", language: "EN", source: "TCGDEX", day, trendCents: 200 },
+      ],
+    });
+
+    const resFr = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "FR" });
+    expect(resFr.status).toBe(200);
+    expect(resFr.body.data.series).toHaveLength(1);
+    expect(resFr.body.data.series[0].trendCents).toBe(100);
+
+    const resEn = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "EN" });
+    expect(resEn.status).toBe(200);
+    expect(resEn.body.data.series).toHaveLength(1);
+    expect(resEn.body.data.series[0].trendCents).toBe(200);
+  });
+
+  it("GET /cards/:cardId/price/history computes stats correctly", async () => {
+    const day1 = new Date("2026-02-10T00:00:00.000Z");
+    const day2 = new Date("2026-02-11T00:00:00.000Z");
+    const day3 = new Date("2026-02-12T00:00:00.000Z");
+
+    await prisma.dailyPriceSnapshot.createMany({
+      data: [
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day1, trendCents: 100 },
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day2, trendCents: 300 },
+        { cardId: "card-1", language: "FR", source: "TCGDEX", day: day3, trendCents: 200 },
+      ],
+    });
+
+    const res = await request(app)
+      .get("/cards/card-1/price/history")
+      .query({ language: "FR", days: 30 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.stats).toEqual({
+      firstDay: "2026-02-10",
+      lastDay: "2026-02-12",
+      lastTrendCents: 200,
+      minTrendCents: 100,
+      maxTrendCents: 300,
+    });
+  });
+
+  it("GET /cards/:cardId/price/history returns 400 without language", async () => {
+    const res = await request(app).get("/cards/card-1/price/history");
+    expect(res.status).toBe(400);
+  });
+
+  // ─── GET /users/me/portfolio/history ───────────────────────────
+
   it("GET /users/me/portfolio/history returns 200 with paginated snapshots", async () => {
     const userId = "user-1";
     const token = makeToken(userId);
