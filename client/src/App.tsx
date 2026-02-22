@@ -3,7 +3,7 @@ import { Routes, Route, Link } from "react-router-dom";
 import { AuthProvider } from "./hooks/useAuth";
 import { CartProvider } from "./hooks/useCart";
 import { Navbar } from "./components/Navbar/Navbar";
-import { PageHeader, Skeleton } from "./components";
+import { PageHeader, Skeleton, RecentListings } from "./components";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const TradesInbox = lazy(() => import("./pages/TradesInbox").then((m) => ({ default: m.TradesInbox })));
@@ -95,7 +95,8 @@ function AppContent() {
                     </Link>
                   }
                 />
-                <div className="card card-body">
+                <RecentListings />
+                <div className="card card-body" style={{ marginTop: "var(--section-sm)" }}>
                   <h2 className="card-title">Commencer</h2>
                   <p className="body-md" style={{ margin: "0 0 var(--space-4)" }}>
                     Connectez-vous avec votre compte BoulevardTCG pour accéder au marketplace et créer des offres d'échange.

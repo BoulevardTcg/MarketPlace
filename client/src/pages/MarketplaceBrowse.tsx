@@ -183,7 +183,7 @@ export function MarketplaceBrowse() {
       {/* Listings grid */}
       {!loading && listings.length > 0 && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" role="list" aria-label="Annonces marketplace">
+          <div className="listing-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" role="list" aria-label="Annonces marketplace">
             {listings.map((listing) => (
               <div key={listing.id} role="listitem">
                 <ListingCard listing={listing} />

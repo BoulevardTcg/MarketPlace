@@ -495,3 +495,13 @@ model UserPortfolioSnapshot {
 
   @@index([userId, capturedAt])
 }
+
+// --- Job snapshot-all : curseur pour reprise après crash ---
+model JobCursor {
+  jobId      String   @id
+  cursorPage Int      @default(1)
+  cursorLang Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@map("job_cursors")
+}

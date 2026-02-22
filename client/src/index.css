@@ -35,33 +35,35 @@
   --color-bg-elevated: #141416;
   --color-bg-subtle: #1a1a1d;
   --color-bg-hover: #1f1f23;
-  --surface-card: #141416;
+  --surface-card: #161618;
   --surface-modal: #18181b;
   --surface-overlay: rgba(10, 10, 11, 0.85);
   --color-accent: #e8e4dd;
   --color-accent-secondary: #8b7355;
   --color-accent-gold: #c9a55a;
+  --color-accent-amber: #f59e0b;
   --color-accent-hover: #f5f2ed;
   --color-text: #f5f5f3;
   --color-text-secondary: #a1a1a6;
   --color-text-muted: #6b6b6f;
   --color-text-inverse: #0a0a0b;
-  --color-success: #4ade80;
-  --color-warning: #fbbf24;
-  --color-error: #f87171;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
   --color-danger: var(--color-error);
-  --color-danger-bg: rgba(248, 113, 113, 0.15);
+  --color-danger-bg: rgba(239, 68, 68, 0.12);
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-default: rgba(255, 255, 255, 0.1);
   --border-hover: rgba(255, 255, 255, 0.15);
-  --border-accent: rgba(232, 228, 221, 0.3);
+  --border-accent: rgba(99, 102, 241, 0.35);
   --glass-bg: rgba(20, 20, 20, 0.55);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 
-  /* Aliases for components (design system + Liquid Metal, navbar) */
-  --color-primary: var(--color-accent);
-  --color-primary-light: rgba(232, 228, 221, 0.15);
+  /* Primary = indigo (CTA, liens importants) ; 1–2 couleurs d'accent pour éviter le criard */
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-light: rgba(99, 102, 241, 0.15);
   --color-text-subtle: var(--color-text-muted);
   --color-surface-elevated: var(--color-bg-elevated);
   --color-text-primary: var(--color-text);
@@ -103,8 +105,9 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 40px rgba(232, 228, 221, 0.1);
-  --shadow-card-hover: 0 20px 40px rgba(0, 0, 0, 0.5), 0 0 60px rgba(232, 228, 221, 0.05);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.08);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-card-hover: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
 
   /* Transitions */
   --duration-fast: 150ms;
@@ -162,10 +165,12 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 40px rgba(63, 126, 243, 0.08);
-  --shadow-card-hover: 0 20px 40px rgba(0, 0, 0, 0.1), 0 0 60px rgba(63, 126, 243, 0.05);
-  --color-primary: var(--color-accent);
-  --color-primary-light: rgba(63, 126, 243, 0.15);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.1);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 12px 32px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --color-primary: #6366f1;
+  --color-primary-hover: #4f46e5;
+  --color-primary-light: rgba(99, 102, 241, 0.12);
   --color-text-subtle: var(--color-text-muted);
   --color-surface-elevated: var(--color-bg-elevated);
 }
@@ -314,19 +319,36 @@ body {
     transform var(--duration-base) var(--ease-out);
 }
 
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: var(--duration-fast);
+}
+
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
+.btn.favorited {
+  color: var(--color-error);
+  border-color: rgba(239, 68, 68, 0.4);
+  transition: color var(--duration-fast), border-color var(--duration-fast), transform var(--duration-base) var(--ease-spring);
+}
+
+/* Micro-interaction : petit "pop" au clic sur favori */
+.btn--heart-pop {
+  animation: heartPop 0.5s var(--ease-spring);
+}
+
 .btn-primary {
-  background-color: var(--color-accent);
-  color: var(--color-text-inverse);
+  background-color: var(--color-primary);
+  color: #fff;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--color-accent-hover);
-  transform: translateY(-1px);
+  background-color: var(--color-primary-hover);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
 }
 
 .btn-secondary {
@@ -338,6 +360,7 @@ body {
 .btn-secondary:hover:not(:disabled) {
   border-color: var(--color-accent);
   color: var(--color-accent);
+  transform: translateY(-1px) scale(1.02);
 }
 
 .btn-ghost {
@@ -940,11 +963,84 @@ body {
   color: var(--color-error);
 }
 
-/* ─── 16. Grid, skeleton ──────────────────────────────────────── */
+/* ─── Feed Derniers ajouts (home) ──────────────────────────────── */
+.recent-listings {
+  margin-top: var(--section-sm);
+  animation: fadeIn 0.6s var(--ease-out);
+}
+
+.recent-listings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.section-title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-xl);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+/* ─── 16. Grid, skeleton (grilles aérées pour listings) ──────────── */
 .grid {
   display: grid;
   gap: var(--space-4);
 }
+
+.listing-grid {
+  gap: var(--space-5);
+}
+
+/* Entrée en cascade des cartes (stagger) — direct child (MarketplaceBrowse) ou dans div (RecentListings) */
+.listing-grid > .listing-card,
+.listing-grid > a.listing-card,
+.listing-grid > div > .listing-card {
+  opacity: 0;
+  animation: fadeInUp 0.55s var(--ease-out) forwards;
+}
+.listing-grid > .listing-card:nth-child(1),
+.listing-grid > a.listing-card:nth-child(1),
+.listing-grid > div:nth-child(1) > .listing-card { animation-delay: 0ms; }
+.listing-grid > .listing-card:nth-child(2),
+.listing-grid > a.listing-card:nth-child(2),
+.listing-grid > div:nth-child(2) > .listing-card { animation-delay: 45ms; }
+.listing-grid > .listing-card:nth-child(3),
+.listing-grid > a.listing-card:nth-child(3),
+.listing-grid > div:nth-child(3) > .listing-card { animation-delay: 90ms; }
+.listing-grid > .listing-card:nth-child(4),
+.listing-grid > a.listing-card:nth-child(4),
+.listing-grid > div:nth-child(4) > .listing-card { animation-delay: 135ms; }
+.listing-grid > .listing-card:nth-child(5),
+.listing-grid > a.listing-card:nth-child(5),
+.listing-grid > div:nth-child(5) > .listing-card { animation-delay: 180ms; }
+.listing-grid > .listing-card:nth-child(6),
+.listing-grid > a.listing-card:nth-child(6),
+.listing-grid > div:nth-child(6) > .listing-card { animation-delay: 225ms; }
+.listing-grid > .listing-card:nth-child(7),
+.listing-grid > a.listing-card:nth-child(7),
+.listing-grid > div:nth-child(7) > .listing-card { animation-delay: 270ms; }
+.listing-grid > .listing-card:nth-child(8),
+.listing-grid > a.listing-card:nth-child(8),
+.listing-grid > div:nth-child(8) > .listing-card { animation-delay: 315ms; }
+.listing-grid > .listing-card:nth-child(9),
+.listing-grid > a.listing-card:nth-child(9),
+.listing-grid > div:nth-child(9) > .listing-card { animation-delay: 360ms; }
+.listing-grid > .listing-card:nth-child(10),
+.listing-grid > a.listing-card:nth-child(10),
+.listing-grid > div:nth-child(10) > .listing-card { animation-delay: 405ms; }
+.listing-grid > .listing-card:nth-child(11),
+.listing-grid > a.listing-card:nth-child(11),
+.listing-grid > div:nth-child(11) > .listing-card { animation-delay: 450ms; }
+.listing-grid > .listing-card:nth-child(12),
+.listing-grid > a.listing-card:nth-child(12),
+.listing-grid > div:nth-child(12) > .listing-card { animation-delay: 495ms; }
+.listing-grid > .listing-card:nth-child(n+13),
+.listing-grid > a.listing-card:nth-child(n+13),
+.listing-grid > div:nth-child(n+13) > .listing-card { animation-delay: 540ms; }
 
 .grid-cols-1 {
   grid-template-columns: 1fr;
@@ -974,6 +1070,52 @@ body {
   }
   100% {
     background-position: 200% 0;
+  }
+}
+
+/* Animations — entrées, hover, feedback */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes heartPop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  70% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes cardGlow {
+  0%,
+  100% {
+    box-shadow: var(--shadow-card-hover);
+  }
+  50% {
+    box-shadow: var(--shadow-card-hover), 0 0 24px rgba(99, 102, 241, 0.2);
   }
 }
 
@@ -1140,7 +1282,7 @@ body {
   }
 }
 
-/* ─── 20. ListingCard ─────────────────────────────────────────── */
+/* ─── 20. ListingCard (dark renforcé, visuels en avant, hover animé) ── */
 .listing-card {
   display: flex;
   flex-direction: column;
@@ -1150,14 +1292,22 @@ body {
   overflow: hidden;
   text-decoration: none;
   color: inherit;
-  transition: border-color var(--duration-base), box-shadow var(--duration-base),
-    transform var(--duration-base);
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-spring);
 }
 
 .listing-card:hover {
-  border-color: var(--border-hover);
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-2px);
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: var(--shadow-card-hover), 0 0 28px rgba(99, 102, 241, 0.12);
+  transform: translateY(-6px) scale(1.02);
+}
+
+.listing-card:active {
+  transform: translateY(-3px) scale(1.01);
+  transition-duration: var(--duration-fast);
 }
 
 .listing-card-image {
@@ -1172,6 +1322,11 @@ body {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform var(--duration-slow) var(--ease-spring);
+}
+
+.listing-card:hover .listing-card-image img {
+  transform: scale(1.08);
 }
 
 .listing-card-image .img-placeholder {

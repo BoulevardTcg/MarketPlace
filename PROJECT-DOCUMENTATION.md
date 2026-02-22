@@ -300,6 +300,7 @@ Si `PROFILE_GATE_ENABLED=true` : portfolio nécessite INVESTOR ou COLLECTOR ; cr
 - **CardPriceSnapshot** : derniers prix externes par (source, externalProductId, capturedAt). Pas de granularité jour.
 - **DailyPriceSnapshot** : un point de prix par jour par (cardId, language, source, day). Défaut source TCGDEX. Champs : trendCents, lowCents, avgCents, highCents, rawJson. Alimenté par le job tcgdexDailySnapshot.
 - **UserPortfolioSnapshot** : snapshots portfolio (totalValueCents, totalCostCents, pnlCents, capturedAt).
+- **JobCursor** : curseur de reprise pour jobs long (ex. `tcgdex-snapshot-all`). Champs : jobId (PK), cursorPage, cursorLang, updatedAt.
 - **Handover** : listingId **ou** tradeOfferId (XOR), status PENDING_VERIFICATION→VERIFIED/REJECTED, requestedByUserId, verifiedByUserId.
 - **ListingReport** : listingId, reporterUserId, reason, details, status OPEN→RESOLVED/REJECTED. Contrainte unique partielle (listingId, reporterUserId) WHERE status='OPEN'.
 - **ModerationAction** : targetType (LISTING/USER/TRADE), targetId, actionType (HIDE, UNHIDE, WARN, BAN, UNBAN, NOTE), actorUserId.
@@ -310,6 +311,7 @@ Si `PROFILE_GATE_ENABLED=true` : portfolio nécessite INVESTOR ou COLLECTOR ; cr
 
 - **src/jobs/importCardmarketPriceGuide.ts** : import des prix depuis un CSV Cardmarket Price Guide vers CardPriceSnapshot. Activé si `PRICE_IMPORT_ENABLED=true`.
 - **src/jobs/tcgdexDailySnapshot.ts** : job manuel — appelle l’API TCGdex pour les paires (cardId, language) issues de UserCollection, des listings PUBLISHED/SOLD, ou de ExternalProductRef (source TCGDEX). Crée ou met à jour un **DailyPriceSnapshot** par jour (UTC). Commande : `npm run job:tcgdex`. Rate limit 200 ms entre appels.
+- **scripts/tcgdex-snapshot-all.ts** : job « snapshot-all » — liste toutes les cartes via TCGdex `/v2/en/cards` paginé (tri `sort:field=id&sort:order=ASC`), puis GET `/v2/{lang}/cards/{id}` par carte/langue ; normalise et upsert dans **DailyPriceSnapshot**. Reprenable via **JobCursor** (jobId `tcgdex-snapshot-all`). Throttling (MIN_DELAY_MS), retry 429 (Retry-After ou backoff). Commandes : `npm run tcgdex:snapshot:all`, `npm run tcgdex:snapshot:all:fr-en-ja`. Variables : TCGDEX_BASE, TCGDEX_LANGS, TCGDEX_ITEMS_PER_PAGE, TCGDEX_CONCURRENCY, TCGDEX_MIN_DELAY_MS, TCGDEX_MAX_RETRIES, TCGDEX_START_PAGE (optionnel).
 
 ### 3.7 Variables d’environnement (server)
 
@@ -327,6 +329,13 @@ Si `PROFILE_GATE_ENABLED=true` : portfolio nécessite INVESTOR ou COLLECTOR ; cr
 | AWS_REGION | Non | Requis si bucket défini. |
 | PRICE_IMPORT_ENABLED | Non | true \| false. Défaut false. |
 | PROFILE_GATE_ENABLED | Non | true \| false. Défaut false. |
+| TCGDEX_BASE | Non | URL base API TCGdex. Défaut https://api.tcgdex.net/v2. |
+| TCGDEX_LANGS | Non | Langues (virgules). Défaut fr. Ex. fr,en,ja. |
+| TCGDEX_ITEMS_PER_PAGE | Non | Taille page liste /cards. Défaut 100, max 100. |
+| TCGDEX_CONCURRENCY | Non | Parallélisme par langue. Défaut 4, max 10. |
+| TCGDEX_MIN_DELAY_MS | Non | Délai minimum entre requêtes détail. Défaut 120. |
+| TCGDEX_MAX_RETRIES | Non | Retries sur 429. Défaut 6. |
+| TCGDEX_START_PAGE | Non | Optionnel : forcer la page de démarrage (sinon reprise DB). |
 
 ### 3.8 Tests
 
@@ -482,6 +491,8 @@ npm run prisma:migrate   # migrations
 npm run prisma:studio
 npm run dev:db           # generate + migrate deploy
 npm run job:tcgdex       # snapshot quotidien prix TCGdex → DailyPriceSnapshot
+npm run tcgdex:snapshot:all        # snapshot-all (liste paginée + détail, reprenable)
+npm run tcgdex:snapshot:all:fr-en-ja  # idem avec langues fr,en,ja
 
 # Client
 cd client

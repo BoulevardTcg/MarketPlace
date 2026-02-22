@@ -9,6 +9,7 @@ export { PriceDeltaBadge } from "./PriceDeltaBadge";
 export { TrustBanner } from "./TrustBanner";
 export { LoadMoreButton } from "./LoadMoreButton";
 export { ListingCard, ListingCardSkeleton, ListingGridSkeleton } from "./ListingCard";
+export { RecentListings } from "./RecentListings";
 export { FilterBar } from "./FilterBar";
 export { FilterBar as FiltersPanel } from "./FilterBar";
 export { SortSelect } from "./SortSelect";
