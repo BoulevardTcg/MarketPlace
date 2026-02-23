@@ -87,6 +87,7 @@ export function CreateListing() {
 
   useEffect(() => {
     if (!hasAuth) return;
+    let cancelled = false;
     setLoadingCollection(true);
     fetchWithAuth("/collection?limit=100")
       .then((res) => {
@@ -94,6 +95,7 @@ export function CreateListing() {
         return res.json();
       })
       .then((data) => {
+        if (cancelled) return;
         const items = (data.data?.items ?? data?.items ?? []) as CollectionItemForListing[];
         setCollectionItems(items);
         const prefill = (location.state as { prefillFromInventory?: { cardId: string; language: string; condition: string } })?.prefillFromInventory;
@@ -120,8 +122,9 @@ export function CreateListing() {
           }
         }
       })
-      .catch(() => setCollectionItems([]))
-      .finally(() => setLoadingCollection(false));
+      .catch(() => { if (!cancelled) setCollectionItems([]); })
+      .finally(() => { if (!cancelled) setLoadingCollection(false); });
+    return () => { cancelled = true; };
   }, [hasAuth, location.state]);
 
   const update = (key: keyof CreateListingForm, value: string | boolean) => {

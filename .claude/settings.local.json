@@ -24,7 +24,9 @@
       "Bash(node -e:*)",
       "Bash(npx tsx:*)",
       "WebFetch(domain:api.tcgdex.net)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

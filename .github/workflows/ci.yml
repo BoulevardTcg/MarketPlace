@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "feature/**"]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Type-check & build both workspaces
+  # ──────────────────────────────────────────────
+  typecheck:
+    name: Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Server: generate Prisma client before type-checking
+      - name: Generate Prisma client (production schema)
+        working-directory: server
+        run: npx prisma generate
+
+      - name: Type-check server
+        working-directory: server
+        run: npx tsc --noEmit
+
+      - name: Type-check client
+        working-directory: client
+        run: npx tsc -b --noEmit
+
+  # ──────────────────────────────────────────────
+  # Backend tests (Vitest + SQLite)
+  # ──────────────────────────────────────────────
+  test-server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # pretest script handles: mkdir .db, prisma generate (SQLite), prisma migrate
+      - name: Run server tests
+        working-directory: server
+        run: npm test
+
+  # ──────────────────────────────────────────────
+  # Client build (ensures production build works)
+  # ──────────────────────────────────────────────
+  build-client:
+    name: Build client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build client
+        working-directory: client
+        run: npm run build

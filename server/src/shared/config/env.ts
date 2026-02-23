@@ -52,7 +52,19 @@ function loadEnv(): Env {
     const msg = parsed.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
     throw new Error(`Invalid environment: ${msg}`);
   }
-  return parsed.data;
+  const data = parsed.data;
+
+  // Production guards: ces variables sont critiques pour la sécurité en prod.
+  if (data.NODE_ENV === "production") {
+    if (!data.JWT_ISSUER) {
+      throw new Error("JWT_ISSUER is required in production (prevents accepting tokens from untrusted issuers).");
+    }
+    if (!data.ADMIN_USER_IDS) {
+      throw new Error("ADMIN_USER_IDS is required in production (prevents any JWT with role=ADMIN from gaining admin access).");
+    }
+  }
+
+  return data;
 }
 
 export const env = loadEnv();

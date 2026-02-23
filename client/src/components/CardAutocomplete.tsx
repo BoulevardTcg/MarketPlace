@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useDebounce } from "../hooks/useDebounce";
 import { searchCards, getCardDetails, toTcgdexLang } from "../api";
 import type { CardSuggestion, CardDetails, MarketPricing } from "../api";
+import { sanitizeImageUrl } from "../utils/listing";
 
 const MAX_RESULTS = 100;
 const DEBOUNCE_MS = 300;
@@ -256,9 +257,9 @@ export function CardAutocomplete({
                 selectSuggestion(s);
               }}
             >
-              {s.image && (
+              {sanitizeImageUrl(s.image) && (
                 <img
-                  src={s.image}
+                  src={sanitizeImageUrl(s.image)!}
                   alt=""
                   width={60}
                   height={84}

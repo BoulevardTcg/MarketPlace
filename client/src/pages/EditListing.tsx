@@ -91,6 +91,7 @@ export function EditListing() {
 
   useEffect(() => {
     if (!hasAuth || !form) return;
+    let cancelled = false;
     setLoadingCollection(true);
     fetchWithAuth("/collection?limit=100")
       .then((res) => {
@@ -98,11 +99,13 @@ export function EditListing() {
         return res.json();
       })
       .then((data) => {
+        if (cancelled) return;
         const items = (data.data?.items ?? data?.items ?? []) as CollectionItemForListing[];
         setCollectionItems(items);
       })
-      .catch(() => setCollectionItems([]))
-      .finally(() => setLoadingCollection(false));
+      .catch(() => { if (!cancelled) setCollectionItems([]); })
+      .finally(() => { if (!cancelled) setLoadingCollection(false); });
+    return () => { cancelled = true; };
   }, [hasAuth, form != null]);
 
   const applyInventoryItem = (item: CollectionItemForListing | null) => {

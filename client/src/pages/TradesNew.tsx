@@ -54,7 +54,18 @@ export function TradesNew() {
   };
 
   useEffect(() => {
-    loadCollection();
+    let cancelled = false;
+    setLoadingCollection(true);
+    fetchWithAuth("/collection?limit=50")
+      .then((res) => { if (!res.ok) throw new Error(`Erreur ${res.status}`); return res.json(); })
+      .then((data) => {
+        if (cancelled) return;
+        setCollectionItems((data.data?.items ?? []) as CollectionItem[]);
+        setNextCursor(data.data?.nextCursor ?? null);
+      })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoadingCollection(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const addCreatorItem = (item: CollectionItem, qty: number) => {

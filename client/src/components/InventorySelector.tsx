@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { getCardDetailsFromMarket } from "../api";
 import { GAME_LABELS, LANGUAGE_LABELS, CONDITION_LABELS } from "../types/marketplace";
 import type { Language, CardCondition, Game } from "../types/marketplace";
+import { sanitizeImageUrl } from "../utils/listing";
 
 /** Item de l’inventaire (collection) affiché dans le sélecteur. */
 export interface InventorySelectorItem {
@@ -128,7 +129,7 @@ function InventoryCard({ item, isSelected, onSelect, imageLanguage }: InventoryC
     let cancelled = false;
     getCardDetailsFromMarket(item.cardId, { language: imageLanguage })
       .then((d) => {
-        if (!cancelled && d?.image) setImageUrl(d.image);
+        if (!cancelled && d?.image) setImageUrl(sanitizeImageUrl(d.image) ?? "");
       })
       .catch(() => {});
     return () => {

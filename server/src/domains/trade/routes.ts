@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma, TradeOfferStatus, TradeEventType } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
-import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
+import { requireNotBanned, assertNotBannedInTx } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
@@ -94,28 +94,22 @@ async function applyTradeItemMove(
 
 // ─── Zod Schemas ──────────────────────────────────────────────
 
+const tradeItemSchema = z.object({
+  cardId: z.string().min(1),
+  language: z.string().min(1),
+  condition: z.string().min(1),
+  quantity: z.number().int().min(1),
+});
+
+const tradeItemsJsonSchema = z.object({
+  schemaVersion: z.number().int(),
+  items: z.array(tradeItemSchema).optional(),
+});
+
 const createTradeOfferBodySchema = z.object({
   receiverUserId: z.string().min(1, "receiverUserId is required"),
-  creatorItemsJson: z
-    .record(z.unknown())
-    .refine(
-      (obj) =>
-        obj &&
-        typeof obj === "object" &&
-        "schemaVersion" in obj &&
-        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
-      { message: "creatorItemsJson must contain schemaVersion (number)" },
-    ),
-  receiverItemsJson: z
-    .record(z.unknown())
-    .refine(
-      (obj) =>
-        obj &&
-        typeof obj === "object" &&
-        "schemaVersion" in obj &&
-        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
-      { message: "receiverItemsJson must contain schemaVersion (number)" },
-    ),
+  creatorItemsJson: tradeItemsJsonSchema,
+  receiverItemsJson: tradeItemsJsonSchema,
   expiresInHours: z.number().int().min(1).max(168).default(72),
 });
 
@@ -133,26 +127,8 @@ const messagesQuerySchema = paginationQuerySchema.extend({
 });
 
 const counterOfferBodySchema = z.object({
-  creatorItemsJson: z
-    .record(z.unknown())
-    .refine(
-      (obj) =>
-        obj &&
-        typeof obj === "object" &&
-        "schemaVersion" in obj &&
-        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
-      { message: "creatorItemsJson must contain schemaVersion (number)" },
-    ),
-  receiverItemsJson: z
-    .record(z.unknown())
-    .refine(
-      (obj) =>
-        obj &&
-        typeof obj === "object" &&
-        "schemaVersion" in obj &&
-        typeof (obj as { schemaVersion: unknown }).schemaVersion === "number",
-      { message: "receiverItemsJson must contain schemaVersion (number)" },
-    ),
+  creatorItemsJson: tradeItemsJsonSchema,
+  receiverItemsJson: tradeItemsJsonSchema,
   expiresInHours: z.number().int().min(1).max(168).optional().default(72),
 });
 
@@ -398,6 +374,9 @@ router.post(
 
     // Atomic: validate collections, apply inventory updates, then status + event
     await prisma.$transaction(async (tx) => {
+      // Re-check ban status inside transaction to close the race window
+      await assertNotBannedInTx(tx, userId);
+
       for (const item of creatorItems) {
         const row = await tx.userCollection.findUnique({
           where: {

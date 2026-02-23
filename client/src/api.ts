@@ -151,7 +151,7 @@ export async function searchCards(
   q: string,
   limit = 100,
   signal?: AbortSignal
-): Promise<CardSuggestion[]> {
+): Promise<CardSuggestion[] | CardDetails> {
   const params = new URLSearchParams({ q: q.trim(), limit: String(Math.min(100, Math.max(1, limit))) });
   const res = await fetch(`${BOUTIQUE_BASE}/trade/cards/search?${params}`, {
     credentials: "include",

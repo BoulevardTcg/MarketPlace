@@ -35,6 +35,7 @@ export function TradesInbox() {
       setError(!getApiUrl() ? "VITE_API_URL non configurée" : null);
       return;
     }
+    let cancelled = false;
     setLoading(true);
     setError(null);
     fetchWithAuth(`/trade/offers?type=${type}&limit=20`)
@@ -42,12 +43,12 @@ export function TradesInbox() {
         if (!res.ok) throw new Error(res.status === 401 ? "Token invalide" : `Erreur ${res.status}`);
         return res.json();
       })
-      .then((data) => setItems(data.data?.items ?? []))
+      .then((data) => { if (!cancelled) setItems(data.data?.items ?? []); })
       .catch((err) => {
-        setError(err.message);
-        setItems([]);
+        if (!cancelled) { setError(err.message); setItems([]); }
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [isAuthenticated, type]);
 
   return (

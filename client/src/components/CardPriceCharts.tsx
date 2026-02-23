@@ -279,7 +279,7 @@ export function CardPriceCharts({ cardId, lang = "FR" }: CardPriceChartsProps) {
                       <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} unit=" €" />
                       <Tooltip
-                        formatter={(value: number) =>
+                        formatter={(value: number | undefined) =>
                           value != null ? `${Number(value).toFixed(2)} €` : "—"
                         }
                         labelFormatter={(label) => String(label)}
@@ -383,10 +383,10 @@ export function CardPriceCharts({ cardId, lang = "FR" }: CardPriceChartsProps) {
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} />
                 <Tooltip
-                  formatter={(value: number) =>
+                  formatter={(value: number | undefined) =>
                     marketHistory.metadata.currency === "USD"
-                      ? `$${Number(value).toFixed(2)}`
-                      : `${Number(value).toFixed(2)} €`
+                      ? `$${Number(value ?? 0).toFixed(2)}`
+                      : `${Number(value ?? 0).toFixed(2)} €`
                   }
                   labelFormatter={(label) => String(label)}
                 />
@@ -500,7 +500,7 @@ export function CardPriceCharts({ cardId, lang = "FR" }: CardPriceChartsProps) {
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip
-                        formatter={(value: number) =>
+                        formatter={(value: number | undefined) =>
                           value != null ? `${Number(value).toFixed(2)} €` : "—"
                         }
                         labelFormatter={(label) => String(label)}

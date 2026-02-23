@@ -282,6 +282,9 @@ router.delete(
 
     await prisma.userCollection.delete({ where: { id: existing.id } });
 
+    // Snapshot portfolio after removing a card (value may have changed)
+    await snapshotPortfolio(userId);
+
     ok(res, { ok: true });
   }),
 );
