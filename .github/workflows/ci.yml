@@ -59,7 +59,12 @@ jobs:
 
       - run: npm ci
 
-      # pretest script handles: mkdir .db, prisma generate (SQLite), prisma migrate
+      # Generate production Prisma client (enums like PriceSource are imported from @prisma/client)
+      - name: Generate Prisma client (production schema)
+        working-directory: server
+        run: npx prisma generate
+
+      # pretest script handles: mkdir .db, prisma generate (SQLite test), prisma migrate
       - name: Run server tests
         working-directory: server
         run: npm test
