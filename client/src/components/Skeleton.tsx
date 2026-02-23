@@ -1,7 +1,7 @@
 interface SkeletonProps {
   variant?: "text" | "heading" | "image" | "badge" | "rect";
-  width?: string;
-  height?: string;
+  width?: string | number;
+  height?: string | number;
   className?: string;
 }
 

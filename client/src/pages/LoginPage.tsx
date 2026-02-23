@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { PageHeader } from "../components";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -35,12 +36,10 @@ export function LoginPage() {
 
   return (
     <section>
-      <h1 className="page-title">Connexion</h1>
-      <p className="page-subtitle">
-        Connectez-vous avec votre compte BoulevardTCG pour accéder au marketplace
-        et aux échanges.
-      </p>
-
+      <PageHeader
+        title="Connexion"
+        subtitle="Connectez-vous avec votre compte BoulevardTCG pour accéder au marketplace et aux échanges."
+      />
       <div className="card card-body" style={{ maxWidth: "28rem" }}>
         <form onSubmit={handleSubmit}>
           <div className="form-group">

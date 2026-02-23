@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getApiUrl, fetchWithAuth } from "../api";
 import { useAuth } from "../hooks/useAuth";
+import { PageHeader } from "../components";
 
 type OfferItem = {
   id: string;
@@ -34,6 +35,7 @@ export function TradesInbox() {
       setError(!getApiUrl() ? "VITE_API_URL non configurée" : null);
       return;
     }
+    let cancelled = false;
     setLoading(true);
     setError(null);
     fetchWithAuth(`/trade/offers?type=${type}&limit=20`)
@@ -41,21 +43,27 @@ export function TradesInbox() {
         if (!res.ok) throw new Error(res.status === 401 ? "Token invalide" : `Erreur ${res.status}`);
         return res.json();
       })
-      .then((data) => setItems(data.data?.items ?? []))
+      .then((data) => { if (!cancelled) setItems(data.data?.items ?? []); })
       .catch((err) => {
-        setError(err.message);
-        setItems([]);
+        if (!cancelled) { setError(err.message); setItems([]); }
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [isAuthenticated, type]);
 
   return (
     <section>
-      <h1 className="page-title">Mes échanges</h1>
-      <p className="page-subtitle">
-        Consultez vos offres reçues ou envoyées, répondez et négociez en toute confiance.
-      </p>
-
+      <PageHeader
+        title="Mes échanges"
+        subtitle="Consultez vos offres reçues ou envoyées, répondez et négociez en toute confiance."
+        action={
+          isAuthenticated ? (
+            <Link to="/trades/new" className="btn btn-primary">
+              Nouvelle offre
+            </Link>
+          ) : undefined
+        }
+      />
       {!isAuthenticated && (
         <div className="card card-body" style={{ marginBottom: "var(--space-4)" }}>
           <p style={{ margin: "0 0 var(--space-3)", color: "var(--color-text-muted)" }}>

@@ -285,7 +285,7 @@ Quand `PROFILE_GATE_ENABLED=true` : les routes portfolio (GET /users/me/portfoli
 ### Collection (protégés + public)
 
 - **GET /collection** — Liste la collection utilisateur (auth). Query : `cardId`, `language`, `cursor`, `limit` (1–100, défaut 50). Réponse : `{ "data": { "items": [...], "nextCursor": string ou null } }`.
-- **GET /collection/dashboard** — Stats inventaire (auth). Réponse : `totalQty`, `breakdownByGame`, `breakdownByLanguage`, `breakdownByCondition`, `masterSetProgress` (stub null).
+- **GET /collection/dashboard** — Stats inventaire (auth). Réponse : `totalQty`, `totalCostCents`, `byGame`, `byLanguage`, `byCondition` (tableaux `{ key, qty, costCents }`).
 - **GET /users/:id/collection** — Vue publique de la collection d’un utilisateur (items avec `isPublic: true`). Query : `cardId`, `language`, `cursor`, `limit`. Réponse : `{ "data": { "items": [...], "nextCursor": ... } }`.
 - **PUT /collection/items** — Créer ou mettre à jour un item (upsert sur userId, cardId, language, condition). Body : `cardId`, `language`, `condition`, `quantity`, optionnels : `cardName`, `setCode`, `isPublic`, `acquiredAt`, `acquisitionPriceCents`, `acquisitionCurrency`. Si `isPublic` est omis à l’update, la valeur existante est conservée. Réponse : `{ "data": { "item": {...} } }`.
 - **DELETE /collection/items** — Supprimer un item. Body : `cardId`, `language`, `condition`. Réponse : `{ "data": { "ok": true } }`. Erreur 404 si absent.

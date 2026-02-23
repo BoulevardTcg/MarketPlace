@@ -20,7 +20,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "job:tcgdex": "tsx src/jobs/tcgdexDailySnapshot.ts",
+    "tcgdex:snapshot:all": "tsx scripts/tcgdex-snapshot-all.ts",
+    "tcgdex:snapshot:all:fr-en-ja": "cross-env TCGDEX_LANGS=fr,en,ja tsx scripts/tcgdex-snapshot-all.ts"
   },
   "engines": {
     "node": ">=24"

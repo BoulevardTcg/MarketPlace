@@ -11,7 +11,7 @@ import {
   PriceSource,
 } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
-import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
+import { requireNotBanned, assertNotBannedInTx } from "../../shared/auth/requireNotBanned.js";
 import {
   optionalAuth,
   type RequestWithOptionalUser,
@@ -50,7 +50,7 @@ const createListingBodySchema = z.object({
   setCode: z.string().optional(),
   edition: z.string().optional(),
   description: z.string().max(2000).optional(),
-  attributesJson: z.record(z.unknown()).optional(),
+  attributesJson: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
 });
 
 const updateListingBodySchema = z
@@ -67,7 +67,7 @@ const updateListingBodySchema = z
     cardName: z.string().optional().nullable(),
     setCode: z.string().optional().nullable(),
     edition: z.string().optional().nullable(),
-    attributesJson: z.record(z.unknown()).optional().nullable(),
+    attributesJson: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().nullable(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided",
@@ -489,7 +489,12 @@ router.patch(
         data: {
           ...fields,
           ...(attributesJson !== undefined
-            ? { attributesJson: attributesJson as Prisma.InputJsonValue | null }
+            ? {
+                attributesJson:
+                  attributesJson === null
+                    ? Prisma.JsonNull
+                    : (attributesJson as Prisma.InputJsonValue),
+              }
             : {}),
         },
       });
@@ -537,6 +542,8 @@ router.post(
     // Atomic: updateMany with status guard prevents race conditions
     const now = new Date();
     await prisma.$transaction(async (tx) => {
+      await assertNotBannedInTx(tx, userId);
+
       const { count } = await tx.listing.updateMany({
         where: { id: listingId, userId, status: ListingStatus.DRAFT },
         data: { status: ListingStatus.PUBLISHED, publishedAt: now },
@@ -653,6 +660,8 @@ router.post(
     // Atomic: update listing + event; if listing has cardId, decrement seller inventory
     const now = new Date();
     await prisma.$transaction(async (tx) => {
+      await assertNotBannedInTx(tx, userId);
+
       const { count } = await tx.listing.updateMany({
         where: { id: listingId, userId, status: ListingStatus.PUBLISHED },
         data: { status: ListingStatus.SOLD, soldAt: now },
@@ -859,6 +868,7 @@ router.post(
       uploadUrl: result.uploadUrl,
       storageKey,
       expiresIn: result.expiresIn,
+      maxBytes: result.maxBytes,
     });
   }),
 );
@@ -873,6 +883,16 @@ router.post(
     const userId = (req as RequestWithUser).user.userId;
     await getListingAsOwner(listingId, userId);
     const body = attachImageBodySchema.parse(req.body ?? {});
+
+    // Security: storageKey must belong to this listing (prevent attaching another listing's image)
+    const expectedPrefix = `listings/${listingId}/`;
+    if (!body.storageKey.startsWith(expectedPrefix)) {
+      throw new AppError(
+        "INVALID_STORAGE_KEY",
+        "storageKey must belong to this listing",
+        400,
+      );
+    }
 
     const count = await prisma.listingImage.count({ where: { listingId } });
     if (count >= MAX_IMAGES_PER_LISTING) {

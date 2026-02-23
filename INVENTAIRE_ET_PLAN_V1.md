@@ -34,7 +34,7 @@ Vérification faite dans le dépôt (schema, routes, shared/auth, tests).
 | Élément | État | Fichiers |
 |--------|------|----------|
 | Champ `UserCollection.isPublic` (ou privacy) | **DONE** | `server/prisma/schema.prisma` (isPublic), migration 20260207130000 |
-| GET /collection/dashboard (qty, breakdown game/langue/condition, master-set stub) | **MISSING** | — |
+| GET /collection/dashboard (totalQty, totalCostCents, byGame, byLanguage, byCondition) | **DONE** | `server/src/domains/collection/routes.ts` |
 | GET /users/:id/collection (vue publique si isPublic) | **MISSING** | `server/src/domains/collection/routes.ts` n'expose que GET /collection pour l'utilisateur connecté |
 | Tests privacy + dashboard shape | **MISSING** | — |
 
@@ -96,7 +96,7 @@ Vérification faite dans le dépôt (schema, routes, shared/auth, tests).
   - Endpoint pour modifier le flag (ex. PATCH /collection/settings avec `isPublic`) ou par item selon spec.
   - `GET /users/:id/collection` — si profil ou collection en public, retourner les items publics ; sinon 403/404.
 - **Dashboard** :
-  - `GET /collection/dashboard` — requireAuth. Retourner : qty totale, breakdown par game/langue/condition (agrégations Prisma), master-set progress. Si pas de référentiel sets : stub (ex. `masterSetProgress: null` + TODO dans le code).
+  - `GET /collection/dashboard` — requireAuth. Retourne : `totalQty`, `totalCostCents`, `byGame`, `byLanguage`, `byCondition` (tableaux `{ key, qty, costCents }`). Implémenté.
 - **Tests** : dashboard shape (champs attendus) ; GET /users/:id/collection selon isPublic (visible ou refusé).
 
 ### P0-3 : Data / graphiques (obligatoire)

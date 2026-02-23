@@ -13,6 +13,8 @@ import {
   CONDITION_LABELS,
   CATEGORY_LABELS,
 } from "../types/marketplace";
+import { PageHeader, CardAutocomplete, InventorySelector } from "../components";
+import { parseEurosToCents, parseQuantity } from "../utils/listing";
 
 /** Item de l'inventaire (collection) — permet de proposer un item en vente et lier l'annonce. */
 export interface CollectionItemForListing {
@@ -70,20 +72,6 @@ const defaultForm: CreateListingForm = {
   publishNow: true,
 };
 
-function parseEurosToCents(value: string): number {
-  const cleaned = value.replace(",", ".").trim();
-  if (!cleaned) return 0;
-  const num = parseFloat(cleaned);
-  if (Number.isNaN(num) || num < 0) return 0;
-  return Math.round(num * 100);
-}
-
-function parseQuantity(value: string): number {
-  const n = parseInt(value, 10);
-  if (Number.isNaN(n) || n < 1) return 1;
-  return Math.min(n, 999);
-}
-
 export function CreateListing() {
   const location = useLocation();
   const [form, setForm] = useState<CreateListingForm>(defaultForm);
@@ -99,6 +87,7 @@ export function CreateListing() {
 
   useEffect(() => {
     if (!hasAuth) return;
+    let cancelled = false;
     setLoadingCollection(true);
     fetchWithAuth("/collection?limit=100")
       .then((res) => {
@@ -106,6 +95,7 @@ export function CreateListing() {
         return res.json();
       })
       .then((data) => {
+        if (cancelled) return;
         const items = (data.data?.items ?? data?.items ?? []) as CollectionItemForListing[];
         setCollectionItems(items);
         const prefill = (location.state as { prefillFromInventory?: { cardId: string; language: string; condition: string } })?.prefillFromInventory;
@@ -132,8 +122,9 @@ export function CreateListing() {
           }
         }
       })
-      .catch(() => setCollectionItems([]))
-      .finally(() => setLoadingCollection(false));
+      .catch(() => { if (!cancelled) setCollectionItems([]); })
+      .finally(() => { if (!cancelled) setLoadingCollection(false); });
+    return () => { cancelled = true; };
   }, [hasAuth, location.state]);
 
   const update = (key: keyof CreateListingForm, value: string | boolean) => {
@@ -229,13 +220,15 @@ export function CreateListing() {
   if (!hasAuth) {
     return (
       <section className="card card-body">
-        <h1 className="page-title">Créer une annonce</h1>
-        <p className="page-subtitle">
-          Connectez-vous pour déposer une annonce (carte, booster, accessoire).
-        </p>
-        <Link to="/connexion" className="btn btn-primary">
-          Se connecter
-        </Link>
+        <PageHeader
+          title="Créer une annonce"
+          subtitle="Connectez-vous pour déposer une annonce (carte, booster, accessoire)."
+          action={
+            <Link to="/connexion" className="btn btn-primary">
+              Se connecter
+            </Link>
+          }
+        />
       </section>
     );
   }
@@ -276,12 +269,10 @@ export function CreateListing() {
 
   return (
     <section className="create-listing-page">
-      <h1 className="page-title">Créer une annonce</h1>
-      <p className="page-subtitle">
-        Décrivez votre carte, booster ou accessoire. Un ou plusieurs exemplaires
-        — vous choisissez la quantité.
-      </p>
-
+      <PageHeader
+        title="Créer une annonce"
+        subtitle="Décrivez votre carte, booster ou accessoire. Un ou plusieurs exemplaires — vous choisissez la quantité."
+      />
       <form onSubmit={handleSubmit} className="card card-body create-listing-form">
         {error && (
           <div className="create-listing-error" role="alert">
@@ -290,29 +281,41 @@ export function CreateListing() {
         )}
 
         <div className="create-listing-inventory">
-          <label htmlFor="create-from-inventory">Proposer un item de l&apos;inventaire</label>
-          <select
-            id="create-from-inventory"
-            className="select"
-            value={selectedFromInventory?.id ?? ""}
-            onChange={(e) => {
-              const id = e.target.value;
-              const item = id ? collectionItems.find((i) => i.id === id) ?? null : null;
-              applyInventoryItem(item);
-            }}
-            disabled={loadingCollection}
-          >
-            <option value="">— Créer sans lien inventaire (à la main)</option>
-            {collectionItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.cardName || item.cardId} — {LANGUAGE_LABELS[item.language]} — {CONDITION_LABELS[item.condition]} — Qté: {item.quantity}
-              </option>
-            ))}
-          </select>
+          <InventorySelector
+            items={collectionItems}
+            loading={loadingCollection}
+            selected={selectedFromInventory}
+            onSelect={applyInventoryItem}
+            imageLanguage={form.language}
+          />
           {selectedFromInventory && (
             <p className="create-listing-hint create-listing-inventory-hint">
               Annonce liée à votre inventaire. À la vente, la quantité sera déduite automatiquement. Max. {selectedFromInventory.quantity} exemplaire{selectedFromInventory.quantity > 1 ? "s" : ""}.
             </p>
+          )}
+          {!selectedFromInventory && (
+            <div className="create-listing-field" style={{ marginTop: "var(--space-4)" }}>
+              <label>Ou rechercher une carte (sans lien inventaire)</label>
+              <CardAutocomplete
+                placeholder="ex. Pikachu, Charizard…"
+                aria-label="Recherche de carte pour l'annonce"
+                language={form.language}
+                onSelect={({ cardId, cardName, setCode, setName, pricing }) => {
+                  const suggested = pricing?.cardmarket?.avg ?? pricing?.cardmarket?.low;
+                  setForm((prev) => ({
+                    ...prev,
+                    cardId,
+                    cardName,
+                    setCode: setCode ?? setName ?? prev.setCode,
+                    title: prev.title || cardName || prev.title,
+                    priceEuros:
+                      prev.priceEuros ||
+                      (suggested != null ? suggested.toFixed(2).replace(".", ",") : prev.priceEuros),
+                  }));
+                  setError(null);
+                }}
+              />
+            </div>
           )}
         </div>
 

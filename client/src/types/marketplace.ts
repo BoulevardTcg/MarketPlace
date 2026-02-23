@@ -61,6 +61,19 @@ export interface PortfolioSnapshot {
   capturedAt: string;
 }
 
+/** Item de la collection utilisateur (inventaire) */
+export interface CollectionItem {
+  id: string;
+  cardId: string;
+  cardName: string | null;
+  setCode: string | null;
+  game: string | null;
+  language: Language;
+  condition: CardCondition;
+  quantity: number;
+  isPublic?: boolean;
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   nextCursor: string | null;

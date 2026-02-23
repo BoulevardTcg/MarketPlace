@@ -18,6 +18,7 @@ export function ListingDetail() {
   const [error, setError] = useState<string | null>(null);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [heartPop, setHeartPop] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
@@ -55,6 +56,7 @@ export function ListingDetail() {
 
   const toggleFavorite = async () => {
     if (!id || favoriteLoading) return;
+    setHeartPop(true);
     setFavoriteLoading(true);
     try {
       const res = await fetchWithAuth(`/marketplace/listings/${id}/favorite`, { method: "POST" });
@@ -65,6 +67,7 @@ export function ListingDetail() {
     } finally {
       setFavoriteLoading(false);
     }
+    setTimeout(() => setHeartPop(false), 520);
   };
 
   const submitReport = async () => {
@@ -92,7 +95,7 @@ export function ListingDetail() {
   if (loading) {
     return (
       <section>
-        <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+        <Link to="/produits" className="back-link">&larr; Marketplace</Link>
         <div className="listing-detail-layout">
           <div className="listing-detail-gallery">
             <Skeleton variant="image" height="400px" />
@@ -112,7 +115,7 @@ export function ListingDetail() {
   if (error) {
     return (
       <section>
-        <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+        <Link to="/produits" className="back-link">&larr; Marketplace</Link>
         <ErrorState message={error} onRetry={fetchListing} />
       </section>
     );
@@ -128,7 +131,7 @@ export function ListingDetail() {
 
   return (
     <section>
-      <Link to="/marketplace" className="back-link">&larr; Marketplace</Link>
+      <Link to="/produits" className="back-link">&larr; Marketplace</Link>
 
       <div className="listing-detail-layout">
         {/* Gallery / carousel */}
@@ -322,7 +325,7 @@ export function ListingDetail() {
             {hasAuth && (
               <button
                 type="button"
-                className={`btn btn-secondary btn-lg ${isFavorited ? "favorited" : ""}`}
+                className={`btn btn-secondary btn-lg ${isFavorited ? "favorited" : ""} ${heartPop ? "btn--heart-pop" : ""}`}
                 onClick={toggleFavorite}
                 disabled={favoriteLoading}
                 aria-label={isFavorited ? "Retirer des favoris" : "Ajouter aux favoris"}

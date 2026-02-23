@@ -18,7 +18,15 @@
       "Bash(taskkill:*)",
       "Bash(npx tsc:*)",
       "Skill(test)",
-      "Bash(npx vite build)"
+      "Bash(npx vite build)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(cross-env NODE_ENV=test DATABASE_URL=\"file:./.db/test.db\" npx prisma generate:*)",
+      "Bash(node -e:*)",
+      "Bash(npx tsx:*)",
+      "WebFetch(domain:api.tcgdex.net)",
+      "Bash(npm run build:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

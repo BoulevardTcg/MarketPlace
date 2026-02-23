@@ -11,6 +11,7 @@ import {
   EmptyState,
   ErrorState,
   LoadMoreButton,
+  PageHeader,
 } from "../components";
 
 /** Read filters from URL (single source of truth on mount / external link). */
@@ -135,18 +136,15 @@ export function MarketplaceBrowse() {
 
   return (
     <section>
-      <div className="browse-header">
-        <div>
-          <h1 className="page-title">Marketplace</h1>
-          <p className="page-subtitle">
-            Trouvez la carte parfaite parmi les annonces de la communauté.
-          </p>
-        </div>
-        <Link to="/annonces/new" className="btn btn-primary browse-cta">
-          Vendre / Créer une annonce
-        </Link>
-      </div>
-
+      <PageHeader
+        title="Marketplace"
+        subtitle="Trouvez la carte parfaite parmi les annonces de la communauté."
+        action={
+          <Link to="/annonces/new" className="btn btn-primary">
+            Vendre / Créer une annonce
+          </Link>
+        }
+      />
       <TrustBanner />
 
       <FilterBar filters={filters} onChange={handleFilterChange} />
@@ -185,7 +183,7 @@ export function MarketplaceBrowse() {
       {/* Listings grid */}
       {!loading && listings.length > 0 && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" role="list" aria-label="Annonces marketplace">
+          <div className="listing-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" role="list" aria-label="Annonces marketplace">
             {listings.map((listing) => (
               <div key={listing.id} role="listitem">
                 <ListingCard listing={listing} />

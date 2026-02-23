@@ -240,10 +240,12 @@ describe("Collection", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.data.totalQty).toBe(3);
-    expect(res.body.data.breakdownByGame).toBeDefined();
-    expect(res.body.data.breakdownByLanguage).toBeDefined();
-    expect(res.body.data.breakdownByCondition).toBeDefined();
-    expect(res.body.data.masterSetProgress).toBeNull();
+    expect(res.body.data.byGame).toBeDefined();
+    expect(res.body.data.byLanguage).toBeDefined();
+    expect(res.body.data.byCondition).toBeDefined();
+    expect(Array.isArray(res.body.data.byGame)).toBe(true);
+    expect(Array.isArray(res.body.data.byLanguage)).toBe(true);
+    expect(Array.isArray(res.body.data.byCondition)).toBe(true);
   });
 
   it("GET /collection/dashboard without token returns 401", async () => {
@@ -289,5 +291,137 @@ describe("Collection", () => {
     const res = await request(app).get(`/users/${userId}/collection`);
     expect(res.status).toBe(200);
     expect(res.body.data.items).toEqual([]);
+  });
+
+  // ─── Auto-snapshot on PUT /collection/items ─────────────────
+
+  it("PUT new item creates a portfolio snapshot", async () => {
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-1",
+        language: "FR",
+        condition: "NM",
+        quantity: 2,
+        acquisitionPriceCents: 100,
+      });
+
+    const snapshots = await prisma.userPortfolioSnapshot.findMany({
+      where: { userId },
+    });
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].totalCostCents).toBe(200); // 2 * 100
+  });
+
+  it("PUT identical data (no change) does not create another snapshot", async () => {
+    // First PUT — creates item + snapshot
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-2",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        acquisitionPriceCents: 50,
+      });
+
+    const before = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+
+    // Second PUT — same data, no change
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-2",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        acquisitionPriceCents: 50,
+      });
+
+    const after = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+    expect(after).toBe(before);
+  });
+
+  it("PUT with changed quantity creates a new snapshot", async () => {
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-3",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        acquisitionPriceCents: 100,
+      });
+
+    const countAfterFirst = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+
+    // Update quantity
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-3",
+        language: "FR",
+        condition: "NM",
+        quantity: 5,
+        acquisitionPriceCents: 100,
+      });
+
+    const countAfterSecond = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+    expect(countAfterSecond).toBe(countAfterFirst + 1);
+
+    // Verify latest snapshot reflects the new cost
+    const latest = await prisma.userPortfolioSnapshot.findFirst({
+      where: { userId },
+      orderBy: { capturedAt: "desc" },
+    });
+    expect(latest!.totalCostCents).toBe(500); // 5 * 100
+  });
+
+  it("PUT with only isPublic change (non-impacting) does not create a snapshot", async () => {
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-4",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        acquisitionPriceCents: 50,
+      });
+
+    const before = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+
+    // Only change isPublic — no impact on value/cost
+    await request(app)
+      .put("/collection/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        cardId: "card-snap-4",
+        language: "FR",
+        condition: "NM",
+        quantity: 1,
+        acquisitionPriceCents: 50,
+        isPublic: true,
+      });
+
+    const after = await prisma.userPortfolioSnapshot.count({
+      where: { userId },
+    });
+    expect(after).toBe(before);
   });
 });

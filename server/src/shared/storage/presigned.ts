@@ -4,6 +4,7 @@ import { S3Client } from "@aws-sdk/client-s3";
 import { env } from "../config/env.js";
 
 const PRESIGNED_EXPIRES_IN_SECONDS = 900; // 15 min
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 
 let s3Client: S3Client | null = null;
 
@@ -23,7 +24,7 @@ function getS3Client(): S3Client | null {
 export async function getPresignedUploadUrl(
   storageKey: string,
   contentType?: string,
-): Promise<{ uploadUrl: string; expiresIn: number } | null> {
+): Promise<{ uploadUrl: string; expiresIn: number; maxBytes: number } | null> {
   const client = getS3Client();
   const bucket = env.LISTING_IMAGES_BUCKET;
   if (!client || !bucket) return null;
@@ -36,7 +37,7 @@ export async function getPresignedUploadUrl(
   const uploadUrl = await getSignedUrl(client, command, {
     expiresIn: PRESIGNED_EXPIRES_IN_SECONDS,
   });
-  return { uploadUrl, expiresIn: PRESIGNED_EXPIRES_IN_SECONDS };
+  return { uploadUrl, expiresIn: PRESIGNED_EXPIRES_IN_SECONDS, maxBytes: MAX_UPLOAD_BYTES };
 }
 
 export function isPresignedConfigured(): boolean {

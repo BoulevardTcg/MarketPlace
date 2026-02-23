@@ -437,6 +437,7 @@ model UserActiveProfile {
 enum PriceSource {
   CARDMARKET
   TCGPLAYER
+  TCGDEX
 }
 
 model ExternalProductRef {
@@ -466,6 +467,23 @@ model CardPriceSnapshot {
   @@index([source, capturedAt])
 }
 
+model DailyPriceSnapshot {
+  id          String      @id @default(cuid())
+  cardId      String
+  language    Language
+  source      PriceSource @default(TCGDEX)
+  day         DateTime
+  capturedAt  DateTime    @default(now())
+  trendCents  Int
+  lowCents    Int?
+  avgCents    Int?
+  highCents   Int?
+  rawJson     Json?
+
+  @@unique([cardId, language, source, day])
+  @@index([cardId, language, day(sort: Desc)])
+}
+
 model UserPortfolioSnapshot {
   id              String   @id @default(cuid())
   userId          String
@@ -475,4 +493,14 @@ model UserPortfolioSnapshot {
   capturedAt      DateTime @default(now())
 
   @@index([userId, capturedAt])
+}
+
+// --- Job snapshot-all : curseur pour reprise après crash ---
+model JobCursor {
+  jobId      String   @id
+  cursorPage Int      @default(1)
+  cursorLang Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@map("job_cursors")
 }

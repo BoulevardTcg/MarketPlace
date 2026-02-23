@@ -1,6 +1,25 @@
 import type { Request, Response, NextFunction } from "express";
 import type { RequestWithUser } from "./requireAuth.js";
 import { prisma } from "../db/prisma.js";
+import { AppError } from "../http/response.js";
+
+/**
+ * Re-check ban status inside a Prisma transaction to close the race window
+ * between the middleware check and the actual write operation.
+ * Use for critical writes (trade accept, listing publish, etc.).
+ */
+export async function assertNotBannedInTx(
+  tx: Pick<typeof prisma, "userModerationState">,
+  userId: string,
+): Promise<void> {
+  const state = await tx.userModerationState.findUnique({
+    where: { userId },
+    select: { isBanned: true },
+  });
+  if (state?.isBanned) {
+    throw new AppError("USER_BANNED", "Your account has been banned", 403);
+  }
+}
 
 /**
  * Middleware that blocks banned users from write operations.

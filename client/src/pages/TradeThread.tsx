@@ -52,18 +52,6 @@ export function TradeThread() {
   const [counterCreatorItems, setCounterCreatorItems] = useState<TradeItemRow[]>([]);
   const [counterReceiverItems, setCounterReceiverItems] = useState<TradeItemRow[]>([]);
 
-  const loadMe = () => {
-    fetchWithAuth("/me")
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (data?.data?.userId) setCurrentUserId(data.data.userId);
-      })
-      .catch(() => {});
-  };
-
   const loadOffer = () => {
     if (!id) return;
     setLoadingOffer(true);
@@ -98,16 +86,31 @@ export function TradeThread() {
   };
 
   useEffect(() => {
-    loadMe();
+    let cancelled = false;
+    fetchWithAuth("/me")
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (!cancelled && data?.data?.userId) setCurrentUserId(data.data.userId); })
+      .catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    loadOffer();
+    if (!id) return;
+    let cancelled = false;
+    setLoadingOffer(true);
+    setError(null);
+    fetchWithAuth(`/trade/offers/${id}`)
+      .then((res) => { if (!res.ok) throw new Error(`Erreur ${res.status}`); return res.json(); })
+      .then((data) => { if (!cancelled) setOffer(data.data); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoadingOffer(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
   useEffect(() => {
     if (!id || !offer) return;
     loadMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, offer?.id]);
 
   useEffect(() => {

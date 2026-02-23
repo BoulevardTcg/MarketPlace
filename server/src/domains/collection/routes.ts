@@ -7,6 +7,7 @@ import { ok } from "../../shared/http/response.js";
 import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
 import { prisma } from "../../shared/db/prisma.js";
+import { snapshotPortfolio } from "../../shared/pricing/portfolio.js";
 import { paginationQuerySchema, decodeCursor, buildPage } from "../../shared/http/pagination.js";
 
 const router = Router();
@@ -14,6 +15,7 @@ const router = Router();
 // ─── Zod Schemas ──────────────────────────────────────────────
 
 const collectionQuerySchema = paginationQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
   cardId: z.string().optional(),
   language: z.nativeEnum(Language).optional(),
 });
@@ -184,6 +186,9 @@ router.get(
   }),
 );
 
+// Fields that impact portfolio value/cost
+const IMPACTING_FIELDS = ["quantity", "acquisitionPriceCents", "acquisitionCurrency"] as const;
+
 // PUT /collection/items — upsert (create or update quantity)
 router.put(
   "/collection/items",
@@ -193,42 +198,59 @@ router.put(
     const userId = (req as RequestWithUser).user.userId;
     const body = upsertCollectionItemSchema.parse(req.body);
 
-    const item = await prisma.userCollection.upsert({
-      where: {
-        userId_cardId_language_condition: {
-          userId,
-          cardId: body.cardId,
-          language: body.language,
-          condition: body.condition,
-        },
-      },
-      // Ne pas toucher isPublic si absent (évite de casser la privacy sur un simple update de qty)
-      update: {
-        quantity: body.quantity,
-        ...(body.cardName !== undefined ? { cardName: body.cardName } : {}),
-        ...(body.setCode !== undefined ? { setCode: body.setCode } : {}),
-        ...(body.isPublic !== undefined ? { isPublic: body.isPublic } : {}),
-        ...(body.acquiredAt !== undefined ? { acquiredAt: body.acquiredAt } : {}),
-        ...(body.acquisitionPriceCents !== undefined
-          ? { acquisitionPriceCents: body.acquisitionPriceCents }
-          : {}),
-        ...(body.acquisitionCurrency !== undefined
-          ? { acquisitionCurrency: body.acquisitionCurrency }
-          : {}),
-      },
-      create: {
+    const compositeKey = {
+      userId_cardId_language_condition: {
         userId,
         cardId: body.cardId,
-        cardName: body.cardName ?? null,
-        setCode: body.setCode ?? null,
         language: body.language,
         condition: body.condition,
-        quantity: body.quantity,
-        isPublic: body.isPublic ?? false,
-        acquiredAt: body.acquiredAt ?? null,
-        acquisitionPriceCents: body.acquisitionPriceCents ?? null,
-        acquisitionCurrency: body.acquisitionCurrency ?? "EUR",
       },
+    };
+
+    const item = await prisma.$transaction(async (tx) => {
+      const before = await tx.userCollection.findUnique({ where: compositeKey });
+
+      const upserted = await tx.userCollection.upsert({
+        where: compositeKey,
+        // Ne pas toucher isPublic si absent (évite de casser la privacy sur un simple update de qty)
+        update: {
+          quantity: body.quantity,
+          ...(body.cardName !== undefined ? { cardName: body.cardName } : {}),
+          ...(body.setCode !== undefined ? { setCode: body.setCode } : {}),
+          ...(body.isPublic !== undefined ? { isPublic: body.isPublic } : {}),
+          ...(body.acquiredAt !== undefined ? { acquiredAt: body.acquiredAt } : {}),
+          ...(body.acquisitionPriceCents !== undefined
+            ? { acquisitionPriceCents: body.acquisitionPriceCents }
+            : {}),
+          ...(body.acquisitionCurrency !== undefined
+            ? { acquisitionCurrency: body.acquisitionCurrency }
+            : {}),
+        },
+        create: {
+          userId,
+          cardId: body.cardId,
+          cardName: body.cardName ?? null,
+          setCode: body.setCode ?? null,
+          language: body.language,
+          condition: body.condition,
+          quantity: body.quantity,
+          isPublic: body.isPublic ?? false,
+          acquiredAt: body.acquiredAt ?? null,
+          acquisitionPriceCents: body.acquisitionPriceCents ?? null,
+          acquisitionCurrency: body.acquisitionCurrency ?? "EUR",
+        },
+      });
+
+      // Snapshot only if the collection actually changed on value-impacting fields
+      const changed = !before || IMPACTING_FIELDS.some(
+        (f) => (before as Record<string, unknown>)[f] !== (upserted as Record<string, unknown>)[f],
+      );
+
+      if (changed) {
+        await snapshotPortfolio(userId, tx);
+      }
+
+      return upserted;
     });
 
     ok(res, { item });
@@ -259,6 +281,9 @@ router.delete(
       throw new AppError("NOT_FOUND", "Collection item not found", 404);
 
     await prisma.userCollection.delete({ where: { id: existing.id } });
+
+    // Snapshot portfolio after removing a card (value may have changed)
+    await snapshotPortfolio(userId);
 
     ok(res, { ok: true });
   }),
