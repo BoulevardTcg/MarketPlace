@@ -307,6 +307,33 @@ export async function getMarketDailyHistory(
   return body?.data !== undefined ? body.data : body;
 }
 
+/** Détails carte (image + métadonnées) depuis l’API Marketplace (TCGdex). */
+export interface CardDetailsFromMarket {
+  cardId: string;
+  name: string | null;
+  image: string | null;
+  setCode: string | null;
+  setName: string | null;
+}
+
+export async function getCardDetailsFromMarket(
+  cardId: string,
+  params: { language: string; signal?: AbortSignal },
+): Promise<CardDetailsFromMarket | null> {
+  const search = new URLSearchParams({ language: params.language });
+  const res = await fetch(
+    `${MARKET_BASE}/cards/${encodeURIComponent(cardId)}/details?${search}`,
+    { signal: params.signal },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body?.data !== undefined ? body.data : body;
+}
+
 export type CreateSaleTransactionPayload = {
   lang: string;
   price: number;

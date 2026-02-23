@@ -15,6 +15,7 @@ const router = Router();
 // ─── Zod Schemas ──────────────────────────────────────────────
 
 const collectionQuerySchema = paginationQuerySchema.extend({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
   cardId: z.string().optional(),
   language: z.nativeEnum(Language).optional(),
 });

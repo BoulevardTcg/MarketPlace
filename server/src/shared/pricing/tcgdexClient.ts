@@ -32,6 +32,8 @@ export interface TcgdexCardmarketPrices {
 export interface TcgdexCardResponse {
   id: string;
   name?: string;
+  image?: string;
+  set?: { id?: string; name?: string };
   cardmarket?: TcgdexCardmarketPrices;
 }
 
@@ -96,6 +98,64 @@ export async function fetchCardPrice(
       avgCents: eurToCents(cm.avg),
       highCents: null, // TCGdex doesn't expose a "high" price
       rawJson: cm,
+    };
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error(`TCGdex API timeout for ${cardId} (${lang})`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Result for card details (image + metadata) from TCGdex. */
+export interface TcgdexCardDetailsResult {
+  cardId: string;
+  name: string | null;
+  image: string | null;
+  setCode: string | null;
+  setName: string | null;
+}
+
+/**
+ * Fetch card details (including image URL) from TCGdex.
+ * Returns null if the card is not found.
+ */
+export async function fetchCardDetails(
+  cardId: string,
+  language: string,
+): Promise<TcgdexCardDetailsResult | null> {
+  const lang = LANG_MAP[language] ?? "fr";
+  const url = `${TCGDEX_BASE}/${lang}/cards/${encodeURIComponent(cardId)}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    });
+
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      throw new Error(`TCGdex API error: ${res.status} ${res.statusText}`);
+    }
+
+    const data = (await res.json()) as TcgdexCardResponse;
+    const imageBase = data.image ?? null;
+    const imageUrl =
+      imageBase != null && imageBase.length > 0
+        ? imageBase + "/low.webp"
+        : null;
+
+    return {
+      cardId: data.id,
+      name: data.name ?? null,
+      image: imageUrl,
+      setCode: data.set?.id ?? null,
+      setName: data.set?.name ?? null,
     };
   } catch (err: any) {
     if (err.name === "AbortError") {

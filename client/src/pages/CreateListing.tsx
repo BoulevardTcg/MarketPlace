@@ -13,7 +13,7 @@ import {
   CONDITION_LABELS,
   CATEGORY_LABELS,
 } from "../types/marketplace";
-import { PageHeader, CardAutocomplete } from "../components";
+import { PageHeader, CardAutocomplete, InventorySelector } from "../components";
 import { parseEurosToCents, parseQuantity } from "../utils/listing";
 
 /** Item de l'inventaire (collection) — permet de proposer un item en vente et lier l'annonce. */
@@ -278,36 +278,25 @@ export function CreateListing() {
         )}
 
         <div className="create-listing-inventory">
-          <label htmlFor="create-from-inventory">Proposer un item de l&apos;inventaire</label>
-          <select
-            id="create-from-inventory"
-            className="select"
-            value={selectedFromInventory?.id ?? ""}
-            onChange={(e) => {
-              const id = e.target.value;
-              const item = id ? collectionItems.find((i) => i.id === id) ?? null : null;
-              applyInventoryItem(item);
-            }}
-            disabled={loadingCollection}
-          >
-            <option value="">— Créer sans lien inventaire (à la main)</option>
-            {collectionItems.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.cardName || item.cardId} — {LANGUAGE_LABELS[item.language]} — {CONDITION_LABELS[item.condition]} — Qté: {item.quantity}
-              </option>
-            ))}
-          </select>
+          <InventorySelector
+            items={collectionItems}
+            loading={loadingCollection}
+            selected={selectedFromInventory}
+            onSelect={applyInventoryItem}
+            imageLanguage={form.language}
+          />
           {selectedFromInventory && (
             <p className="create-listing-hint create-listing-inventory-hint">
               Annonce liée à votre inventaire. À la vente, la quantité sera déduite automatiquement. Max. {selectedFromInventory.quantity} exemplaire{selectedFromInventory.quantity > 1 ? "s" : ""}.
             </p>
           )}
-          {form.game === "POKEMON" && !selectedFromInventory && (
-            <div className="create-listing-field" style={{ marginTop: "1rem" }}>
-              <label>Rechercher une carte (Pokémon)</label>
+          {!selectedFromInventory && (
+            <div className="create-listing-field" style={{ marginTop: "var(--space-4)" }}>
+              <label>Ou rechercher une carte (sans lien inventaire)</label>
               <CardAutocomplete
-                placeholder="ex. Pikachu, Dracolosse…"
-                aria-label="Recherche de carte Pokémon pour l'annonce"
+                placeholder="ex. Pikachu, Charizard…"
+                aria-label="Recherche de carte pour l'annonce"
+                language={form.language}
                 onSelect={({ cardId, cardName, setCode, setName, pricing }) => {
                   const suggested = pricing?.cardmarket?.avg ?? pricing?.cardmarket?.low;
                   setForm((prev) => ({

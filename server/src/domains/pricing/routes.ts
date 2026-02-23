@@ -9,6 +9,7 @@ import { prisma } from "../../shared/db/prisma.js";
 import { env } from "../../shared/config/env.js";
 import { requireProfile } from "../../shared/auth/requireProfile.js";
 import { computePortfolioValue } from "../../shared/pricing/portfolio.js";
+import { fetchCardDetails } from "../../shared/pricing/tcgdexClient.js";
 import type { Request, Response, NextFunction } from "express";
 import {
   paginationQuerySchema,
@@ -41,7 +42,25 @@ const portfolioHistoryQuerySchema = paginationQuerySchema.extend({
   range: z.enum(["7d", "30d", "90d"]).default("30d"),
 });
 
+const cardDetailsQuerySchema = z.object({
+  language: z.nativeEnum(Language).default(Language.FR),
+});
+
 // ─── Routes ───────────────────────────────────────────────────
+
+// GET /cards/:cardId/details — card metadata + image URL from TCGdex (for inventory selector, etc.)
+router.get(
+  "/cards/:cardId/details",
+  asyncHandler(async (req, res) => {
+    const cardId = req.params.cardId;
+    const query = cardDetailsQuerySchema.parse(req.query);
+    const details = await fetchCardDetails(cardId, query.language);
+    if (!details) {
+      throw new AppError("NOT_FOUND", "Card not found", 404);
+    }
+    ok(res, details);
+  }),
+);
 
 // GET /cards/:cardId/price — latest market price for a card
 router.get(

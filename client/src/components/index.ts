@@ -12,7 +12,9 @@ export { ListingCard, ListingCardSkeleton, ListingGridSkeleton } from "./Listing
 export { RecentListings } from "./RecentListings";
 export { FilterBar } from "./FilterBar";
 export { FilterBar as FiltersPanel } from "./FilterBar";
+export { InventorySelector } from "./InventorySelector";
 export { SortSelect } from "./SortSelect";
 export { PageHeader } from "./ui/PageHeader";
 export type { Filters } from "./FilterBar";
+export type { InventorySelectorItem } from "./InventorySelector";
 export type { PageHeaderProps } from "./ui/PageHeader";
