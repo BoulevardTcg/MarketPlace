@@ -33,6 +33,7 @@ services:
       NODE_ENV: development
       DATABASE_URL: postgresql://boulevard:boulevard_dev@postgres:5432/boulevard_market
       PORT: "8081"
+      BOUTIQUE_API_URL: http://host.docker.internal:8080/api
     volumes:
       - ./server/src:/app/src
       - ./server/prisma:/app/prisma

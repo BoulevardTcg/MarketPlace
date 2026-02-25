@@ -1824,12 +1824,12 @@ body {
 }
 
 .kpi-info-panel {
-  position: absolute;
-  bottom: calc(100% + var(--space-3));
-  left: 50%;
-  transform: translateX(-50%);
+  /* Rendu via createPortal → position: fixed pour échapper aux stacking contexts
+     (backdrop-filter sur les kpi-card crée un stacking context qui piège position:absolute) */
+  position: fixed;
+  transform: translateX(-50%) translateY(calc(-100% - 10px));
   width: max-content;
-  max-width: 320px;
+  max-width: min(320px, calc(100vw - var(--space-6)));
   padding: var(--space-4);
   background: var(--surface-modal, #18181b);
   border: 1px solid var(--border-default);
@@ -1842,18 +1842,18 @@ body {
   text-transform: none;
   letter-spacing: 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  z-index: 20;
+  z-index: var(--z-toast);
   animation: kpi-info-in 0.2s var(--ease-out, ease-out);
 }
 
 @keyframes kpi-info-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateX(-50%) translateY(calc(-100% - 6px));
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateX(-50%) translateY(calc(-100% - 10px));
   }
 }
 
@@ -1945,9 +1945,9 @@ body {
 }
 
 .range-btn.active {
-  background: var(--color-accent-secondary, #8b7355);
-  color: var(--color-bg, #0a0a0b);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
 }
 
 /* Chart Cards */
@@ -2089,6 +2089,114 @@ body {
   border-radius: 50%;
   margin-right: var(--space-2);
   vertical-align: middle;
+}
+
+/* Distribution bar list (inventaire par jeu / par langue) */
+.dist-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.dist-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dist-row-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.dist-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dist-name {
+  flex: 1;
+  color: var(--color-text);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dist-count {
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 28px;
+  text-align: right;
+}
+
+.dist-pct {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+  min-width: 38px;
+  text-align: right;
+}
+
+.dist-track {
+  height: 5px;
+  background: var(--color-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dist-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.dist-total {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-2);
+  text-align: right;
+}
+
+/* Game selector buttons (formulaire ajout collection) */
+.inv-game-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.inv-game-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  line-height: 1.4;
+}
+
+.inv-game-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.inv-game-btn--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.inv-game-btn--active:hover {
+  color: #fff;
 }
 
 /* Recharts overrides for dark mode / theme */
@@ -2718,4 +2826,306 @@ body.noScroll {
 .inventory-load-more {
   margin-top: var(--space-5);
   text-align: center;
+}
+
+/* ─── Portfolio — Dynamisme & améliorations visuelles ──────────── */
+
+/* KPI : animation d'entrée en cascade — utilise les propriétés individuelles
+   pour que les animation-delay en nth-child puissent les surcharger proprement */
+.portfolio-dashboard .kpi-card {
+  opacity: 0;
+  animation-name: fadeInUp;
+  animation-duration: 0.45s;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: forwards;
+}
+
+.kpi-grid--wide > .kpi-card:nth-child(1)    { animation-delay: 0ms; }
+.kpi-grid--wide > .kpi-card:nth-child(2)    { animation-delay: 60ms; }
+.kpi-grid--wide > .kpi-card:nth-child(3)    { animation-delay: 120ms; }
+.kpi-grid--wide > .kpi-card:nth-child(4)    { animation-delay: 180ms; }
+.kpi-grid--wide > .kpi-card:nth-child(5)    { animation-delay: 240ms; }
+.kpi-grid--wide > .kpi-card:nth-child(n+6)  { animation-delay: 300ms; }
+
+/* KPI highlight — barre d'accent en haut pour distinguer le KPI principal */
+.portfolio-dashboard .kpi-card.kpi-highlight::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-accent-gold), var(--color-accent-secondary));
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.portfolio-dashboard .kpi-card.kpi-highlight .kpi-value {
+  font-size: var(--text-3xl);
+}
+
+/* Chart card — hover subtil sans transform (évite de gêner les tooltips Recharts) */
+.portfolio-dashboard .chart-card {
+  transition: border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.portfolio-dashboard .chart-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+/* Sections — animation d'entrée en cascade */
+.portfolio-dashboard > .portfolio-section,
+.portfolio-dashboard > .portfolio-inventaire {
+  opacity: 0;
+  animation-name: fadeInUp;
+  animation-duration: 0.55s;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: forwards;
+}
+.portfolio-dashboard > section:nth-of-type(1) { animation-delay: 360ms; }
+.portfolio-dashboard > section:nth-of-type(2) { animation-delay: 460ms; }
+.portfolio-dashboard > section:nth-of-type(3) { animation-delay: 560ms; }
+.portfolio-dashboard > section:nth-of-type(4) { animation-delay: 400ms; }
+
+/* Barre d'actions en bas */
+.portfolio-dashboard > .portfolio-actions-bar {
+  opacity: 0;
+  animation: fadeIn 0.4s var(--ease-out) 650ms forwards;
+}
+
+/* Inventaire — items en cascade */
+.inventory-list > .inventory-item {
+  opacity: 0;
+  animation-name: fadeInUp;
+  animation-duration: 0.4s;
+  animation-timing-function: var(--ease-out);
+  animation-fill-mode: forwards;
+}
+.inventory-list > .inventory-item:nth-child(1)    { animation-delay: 0ms; }
+.inventory-list > .inventory-item:nth-child(2)    { animation-delay: 40ms; }
+.inventory-list > .inventory-item:nth-child(3)    { animation-delay: 80ms; }
+.inventory-list > .inventory-item:nth-child(4)    { animation-delay: 120ms; }
+.inventory-list > .inventory-item:nth-child(5)    { animation-delay: 160ms; }
+.inventory-list > .inventory-item:nth-child(6)    { animation-delay: 200ms; }
+.inventory-list > .inventory-item:nth-child(7)    { animation-delay: 240ms; }
+.inventory-list > .inventory-item:nth-child(8)    { animation-delay: 280ms; }
+.inventory-list > .inventory-item:nth-child(9)    { animation-delay: 320ms; }
+.inventory-list > .inventory-item:nth-child(n+10) { animation-delay: 360ms; }
+
+/* Vignette initiale (thumbnail) dans l'inventaire */
+.inventory-item-thumb {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-light);
+  border: 1px solid var(--border-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-base);
+  font-weight: var(--font-bold);
+  color: var(--color-primary);
+  font-family: var(--font-display);
+  user-select: none;
+  text-transform: uppercase;
+}
+
+/* Navigation rapide (ancres) */
+.portfolio-nav {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  opacity: 0;
+  animation: fadeIn 0.35s var(--ease-out) 100ms forwards;
+}
+.portfolio-nav-link {
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  transition: color var(--duration-fast), background-color var(--duration-fast);
+}
+.portfolio-nav-link:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+
+/* Tooltip Recharts — design system cohérent */
+.recharts-custom-tooltip {
+  background: var(--surface-modal);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-lg);
+  min-width: 160px;
+}
+.recharts-custom-tooltip-label {
+  font-weight: var(--font-semibold);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+.recharts-custom-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+.recharts-custom-tooltip-row:last-child {
+  margin-bottom: 0;
+}
+.recharts-custom-tooltip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* A11y — désactiver les animations si l'utilisateur le préfère */
+@media (prefers-reduced-motion: reduce) {
+  .portfolio-dashboard .kpi-card,
+  .portfolio-dashboard > .portfolio-section,
+  .portfolio-dashboard > .portfolio-inventaire,
+  .portfolio-dashboard > .portfolio-actions-bar,
+  .portfolio-nav,
+  .inventory-list > .inventory-item {
+    opacity: 1 !important;
+    animation: none !important;
+  }
+}
+
+/* ─── P&L Breakdown Table ───────────────────────────────────── */
+
+.pnl-breakdown-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pnl-breakdown-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.pnl-breakdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  min-width: 560px;
+}
+
+.pnl-breakdown-table thead th {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--color-surface-2, rgba(255,255,255,0.03));
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.pnl-breakdown-table thead th.pnl-sortable {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.pnl-breakdown-table thead th.pnl-sortable:hover {
+  color: var(--color-text);
+}
+
+.pnl-breakdown-table thead th.pnl-sorted {
+  color: var(--color-primary);
+}
+
+.pnl-breakdown-table .pnl-row {
+  border-bottom: 1px solid var(--color-border);
+  transition: background 0.12s;
+}
+
+.pnl-breakdown-table .pnl-row:last-child {
+  border-bottom: none;
+}
+
+.pnl-breakdown-table .pnl-row:hover {
+  background: var(--color-surface-2, rgba(255,255,255,0.03));
+}
+
+.pnl-breakdown-table td {
+  padding: var(--space-2) var(--space-3);
+  vertical-align: middle;
+}
+
+.pnl-col-name {
+  max-width: 220px;
+}
+
+.pnl-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pnl-col-meta {
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.pnl-card-name {
+  display: block;
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.pnl-card-set {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  margin-top: 1px;
+}
+
+.pnl-qty {
+  color: var(--color-primary);
+  font-weight: var(--font-semibold);
+}
+
+.pnl-na {
+  color: var(--color-text-muted);
+  opacity: 0.5;
+}
+
+.pnl-sort-icon {
+  font-size: 0.65em;
+  margin-left: 3px;
+  opacity: 0.4;
+}
+
+.pnl-sort-icon--active {
+  opacity: 1;
+  color: var(--color-primary);
+}
+
+.pnl-show-more {
+  text-align: center;
+  padding-top: var(--space-2);
 }

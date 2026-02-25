@@ -42,6 +42,22 @@ export interface ListingImage {
   createdAt: string;
 }
 
+export interface PortfolioBreakdownItem {
+  cardId: string;
+  cardName: string | null;
+  setCode: string | null;
+  language: string;
+  condition: string;
+  quantity: number;
+  unitValueCents: number | null;
+  totalValueCents: number | null;
+  unitCostCents: number | null;
+  totalCostCents: number | null;
+  pnlCents: number | null;
+  roiPercent: number | null;
+  priceSource: "CARDMARKET" | "TCGDEX" | null;
+}
+
 export interface Portfolio {
   totalValueCents: number;
   totalCostCents: number;
@@ -50,6 +66,7 @@ export interface Portfolio {
   itemCount: number;
   valuedCount: number;
   missingCount: number;
+  breakdown?: PortfolioBreakdownItem[];
 }
 
 export interface PortfolioSnapshot {

@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { fetchWithAuth, getAccessToken, getCardDetails, toTcgdexLang } from "../api";
 import type {
   Portfolio,
+  PortfolioBreakdownItem,
   PortfolioSnapshot,
   CollectionDashboard,
   SalesSummary,
@@ -14,14 +16,20 @@ import { GAME_LABELS, LANGUAGE_LABELS, CONDITION_LABELS } from "../types/marketp
 
 const LANGUAGES: Language[] = ["FR", "EN", "JP", "DE", "ES", "IT", "OTHER"];
 const CONDITIONS: CardCondition[] = ["NM", "LP", "MP", "HP", "DMG"];
+const GAMES: { value: string; label: string }[] = [
+  { value: "POKEMON", label: "Pokémon" },
+  { value: "ONE_PIECE", label: "One Piece" },
+  { value: "MTG", label: "Magic: The Gathering" },
+  { value: "YUGIOH", label: "Yu-Gi-Oh!" },
+  { value: "LORCANA", label: "Lorcana" },
+  { value: "OTHER", label: "Autre TCG" },
+];
 import {
   ResponsiveContainer,
   AreaChart,
   Area,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
   Cell,
   XAxis,
   YAxis,
@@ -95,11 +103,11 @@ function renderEuroTooltip({ active, payload, label }: any) {
     ? new Date(label).toLocaleString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : String(label);
   return (
-    <div style={{ background: "#1e1e2e", border: "1px solid #444", borderRadius: 8, padding: "8px 14px", fontSize: 13 }}>
-      <div style={{ fontWeight: 600, color: "#ccc", marginBottom: 4 }}>{labelText}</div>
+    <div className="recharts-custom-tooltip">
+      <div className="recharts-custom-tooltip-label">{labelText}</div>
       {payload.map((entry: any, i: number) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, color: entry.color || entry.stroke || "#fff" }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: entry.color || entry.stroke, display: "inline-block" }} />
+        <div key={i} className="recharts-custom-tooltip-row" style={{ color: entry.color || entry.stroke || "var(--color-text)" }}>
+          <span className="recharts-custom-tooltip-dot" style={{ background: entry.color || entry.stroke }} />
           <span>{entry.name} : <strong>{Number(entry.value).toFixed(2)} €</strong></span>
         </div>
       ))}
@@ -111,11 +119,11 @@ function renderEuroTooltip({ active, payload, label }: any) {
 function renderQtyTooltip({ active, payload, label }: any) {
   if (!active || !payload || payload.length === 0) return null;
   return (
-    <div style={{ background: "#1e1e2e", border: "1px solid #444", borderRadius: 8, padding: "8px 14px", fontSize: 13 }}>
-      <div style={{ fontWeight: 600, color: "#ccc", marginBottom: 4 }}>{label}</div>
+    <div className="recharts-custom-tooltip">
+      <div className="recharts-custom-tooltip-label">{label}</div>
       {payload.map((entry: any, i: number) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, color: entry.color || entry.stroke || "#fff" }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: entry.color || entry.stroke, display: "inline-block" }} />
+        <div key={i} className="recharts-custom-tooltip-row" style={{ color: entry.color || entry.stroke || "var(--color-text)" }}>
+          <span className="recharts-custom-tooltip-dot" style={{ background: entry.color || entry.stroke }} />
           <span>{entry.name} : <strong>{entry.value}</strong></span>
         </div>
       ))}
@@ -142,12 +150,25 @@ function ChartCard({ title, subtitle, children, className = "" }: {
 
 function KpiTooltip({ text, id }: { text: string; id: string }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLSpanElement>(null);
+
+  const handleToggle = () => {
+    if (!open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({ top: rect.top, left: rect.left + rect.width / 2 });
+    }
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (wrapperRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
@@ -161,20 +182,28 @@ function KpiTooltip({ text, id }: { text: string; id: string }) {
   }, [open]);
 
   return (
-    <span className={`kpi-info ${open ? "kpi-info--open" : ""}`} ref={ref}>
+    <span className={`kpi-info ${open ? "kpi-info--open" : ""}`} ref={wrapperRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="kpi-info-trigger"
         aria-expanded={open}
         aria-describedby={id}
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
       >
         i
       </button>
-      {open && (
-        <span id={id} className="kpi-info-panel" role="tooltip">
+      {open && createPortal(
+        <span
+          ref={panelRef}
+          id={id}
+          className="kpi-info-panel"
+          role="tooltip"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {text}
-        </span>
+        </span>,
+        document.body
       )}
     </span>
   );
@@ -184,6 +213,157 @@ function EmptyChart({ message }: { message: string }) {
   return (
     <div className="chart-empty">
       <p>{message}</p>
+    </div>
+  );
+}
+
+function DistributionBar({
+  items,
+  colorOffset = 0,
+}: {
+  items: { name: string; value: number; costEuros: number }[];
+  colorOffset?: number;
+}) {
+  const total = items.reduce((s, i) => s + i.value, 0);
+  if (items.length === 0) return null;
+  return (
+    <div className="dist-list">
+      {items.map((item, idx) => {
+        const pct = total > 0 ? Math.round((item.value / total) * 100) : 0;
+        const color = COLORS[(idx + colorOffset) % COLORS.length];
+        return (
+          <div key={idx} className="dist-row">
+            <div className="dist-row-top">
+              <span className="dist-dot" style={{ background: color }} />
+              <span className="dist-name">{item.name}</span>
+              <span className="dist-count">{item.value}</span>
+              <span className="dist-pct">{pct}%</span>
+            </div>
+            <div className="dist-track">
+              <div className="dist-fill" style={{ width: `${pct}%`, background: color }} />
+            </div>
+          </div>
+        );
+      })}
+      <p className="dist-total">{total} carte{total > 1 ? "s" : ""} au total</p>
+    </div>
+  );
+}
+
+type PnlSortKey = "totalValueCents" | "totalCostCents" | "pnlCents" | "roiPercent";
+
+function PnlBreakdownTable({ items }: { items: PortfolioBreakdownItem[] }) {
+  const [sortKey, setSortKey] = useState<PnlSortKey>("totalValueCents");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [expanded, setExpanded] = useState(false);
+  const PAGE = 20;
+
+  const handleSort = (key: PnlSortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const sorted = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const av = a[sortKey] ?? (sortDir === "desc" ? -Infinity : Infinity);
+      const bv = b[sortKey] ?? (sortDir === "desc" ? -Infinity : Infinity);
+      return sortDir === "desc" ? (bv as number) - (av as number) : (av as number) - (bv as number);
+    });
+  }, [items, sortKey, sortDir]);
+
+  const visible = expanded ? sorted : sorted.slice(0, PAGE);
+
+  const sortIcon = (key: PnlSortKey) => {
+    if (sortKey !== key) return <span className="pnl-sort-icon">⇅</span>;
+    return <span className="pnl-sort-icon pnl-sort-icon--active">{sortDir === "desc" ? "↓" : "↑"}</span>;
+  };
+
+  if (items.length === 0) {
+    return <EmptyChart message="Aucune carte dans la collection." />;
+  }
+
+  return (
+    <div className="pnl-breakdown-wrapper">
+      <div className="pnl-breakdown-scroll">
+        <table className="pnl-breakdown-table">
+          <thead>
+            <tr>
+              <th className="pnl-col-name">Carte</th>
+              <th className="pnl-col-meta">Langue · État · Qté</th>
+              <th
+                className={`pnl-col-num pnl-sortable ${sortKey === "totalValueCents" ? "pnl-sorted" : ""}`}
+                onClick={() => handleSort("totalValueCents")}
+              >
+                Cote totale {sortIcon("totalValueCents")}
+              </th>
+              <th
+                className={`pnl-col-num pnl-sortable ${sortKey === "totalCostCents" ? "pnl-sorted" : ""}`}
+                onClick={() => handleSort("totalCostCents")}
+              >
+                Investi {sortIcon("totalCostCents")}
+              </th>
+              <th
+                className={`pnl-col-num pnl-sortable ${sortKey === "pnlCents" ? "pnl-sorted" : ""}`}
+                onClick={() => handleSort("pnlCents")}
+              >
+                P&L {sortIcon("pnlCents")}
+              </th>
+              <th
+                className={`pnl-col-num pnl-sortable ${sortKey === "roiPercent" ? "pnl-sorted" : ""}`}
+                onClick={() => handleSort("roiPercent")}
+              >
+                ROI {sortIcon("roiPercent")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((item, i) => {
+              const hasPnl = item.pnlCents != null;
+              const positive = hasPnl && item.pnlCents! >= 0;
+              return (
+                <tr key={`${item.cardId}-${item.language}-${item.condition}-${i}`} className="pnl-row">
+                  <td className="pnl-col-name">
+                    <span className="pnl-card-name">{item.cardName || item.cardId}</span>
+                    {item.setCode && <span className="pnl-card-set">{item.setCode}</span>}
+                  </td>
+                  <td className="pnl-col-meta">
+                    <span className="badge badge-sm">{item.language}</span>
+                    {" "}{item.condition}
+                    {item.quantity > 1 && <span className="pnl-qty"> ×{item.quantity}</span>}
+                  </td>
+                  <td className="pnl-col-num">
+                    {item.totalValueCents != null ? euroFormatter(item.totalValueCents / 100) : <span className="pnl-na">—</span>}
+                  </td>
+                  <td className="pnl-col-num">
+                    {item.totalCostCents != null ? euroFormatter(item.totalCostCents / 100) : <span className="pnl-na">—</span>}
+                  </td>
+                  <td className="pnl-col-num" style={{ color: hasPnl ? (positive ? "var(--color-success)" : "var(--color-danger)") : undefined }}>
+                    {hasPnl
+                      ? `${positive ? "+" : ""}${euroFormatter(item.pnlCents! / 100)}`
+                      : <span className="pnl-na">—</span>}
+                  </td>
+                  <td className="pnl-col-num" style={{ color: item.roiPercent != null ? (item.roiPercent >= 0 ? "var(--color-success)" : "var(--color-danger)") : undefined }}>
+                    {item.roiPercent != null
+                      ? `${item.roiPercent >= 0 ? "+" : ""}${item.roiPercent} %`
+                      : <span className="pnl-na">—</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {sorted.length > PAGE && (
+        <div className="pnl-show-more">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "Réduire" : `Voir les ${sorted.length - PAGE} autres cartes`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -211,6 +391,7 @@ export function PortfolioDashboard() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [cardImageFallbackEn, setCardImageFallbackEn] = useState(false);
   const [addForm, setAddForm] = useState({
+    game: "POKEMON",
     cardId: "",
     cardName: "",
     setCode: "",
@@ -268,7 +449,7 @@ export function PortfolioDashboard() {
     try {
       const historyRange = range;
       const [portfolioRes, historyRes, dashRes, salesRes] = await Promise.all([
-        fetchWithAuth("/users/me/portfolio"),
+        fetchWithAuth("/users/me/portfolio?live=true"),
         fetchWithAuth(`/users/me/portfolio/history?range=${historyRange}&limit=50`),
         fetchWithAuth("/collection/dashboard"),
         fetchWithAuth("/marketplace/me/sales/summary"),
@@ -371,6 +552,7 @@ export function PortfolioDashboard() {
         cardId,
         cardName: addForm.cardName.trim() || undefined,
         setCode: addForm.setCode.trim() || undefined,
+        game: addForm.game || undefined,
         language: addForm.language,
         condition: addForm.condition,
         quantity,
@@ -382,7 +564,7 @@ export function PortfolioDashboard() {
       .then((res) => {
         if (!res.ok) return res.json().then((d: { error?: { message?: string } }) => { throw new Error(d?.error?.message ?? `Erreur ${res.status}`); });
         setShowAddForm(false);
-        setAddForm({ cardId: "", cardName: "", setCode: "", cardImage: "", cardSetName: "", cardRarity: "", cardNumber: "", cardPricing: undefined, marketPricing: undefined, language: "FR", condition: "NM", quantity: "1", acquisitionPriceEuros: "", acquiredAt: "" });
+        setAddForm({ game: "POKEMON", cardId: "", cardName: "", setCode: "", cardImage: "", cardSetName: "", cardRarity: "", cardNumber: "", cardPricing: undefined, marketPricing: undefined, language: "FR", condition: "NM", quantity: "1", acquisitionPriceEuros: "", acquiredAt: "" });
         loadCollection();
         fetchData();
       })
@@ -451,14 +633,19 @@ export function PortfolioDashboard() {
 
   const gameInventoryData = useMemo(() => {
     if (!dashboard?.byGame?.length) return [];
-    return dashboard.byGame
-      .filter((g) => g.qty > 0)
-      .sort((a, b) => b.qty - a.qty)
-      .map((g) => ({
-        name: GAME_LABELS[g.key] ?? g.key,
-        value: g.qty,
-        costEuros: centsToEuros(g.costCents),
-      }));
+    // Merge entries with the same display name (e.g. MTG + MAGIC → "Magic")
+    const merged = new Map<string, { value: number; costEuros: number }>();
+    for (const g of dashboard.byGame) {
+      if (g.qty === 0) continue;
+      const displayName = GAME_LABELS[g.key] ?? g.key;
+      const existing = merged.get(displayName) ?? { value: 0, costEuros: 0 };
+      existing.value += g.qty;
+      existing.costEuros += centsToEuros(g.costCents);
+      merged.set(displayName, existing);
+    }
+    return [...merged.entries()]
+      .map(([name, { value, costEuros }]) => ({ name, value, costEuros }))
+      .sort((a, b) => b.value - a.value);
   }, [dashboard]);
 
   const languageData = useMemo(() => {
@@ -551,6 +738,15 @@ export function PortfolioDashboard() {
         subtitle="Votre collection, vos ventes et votre performance en un coup d'œil."
       />
 
+      {/* Navigation rapide */}
+      <nav className="portfolio-nav" aria-label="Navigation rapide dans le portfolio">
+        <a href="#performance" className="portfolio-nav-link">Performance</a>
+        <a href="#ventes" className="portfolio-nav-link">Ventes</a>
+        <a href="#repartition" className="portfolio-nav-link">Répartition</a>
+        <a href="#pnl-detail" className="portfolio-nav-link">P&amp;L / carte</a>
+        <a href="#inventaire" className="portfolio-nav-link">Inventaire</a>
+      </nav>
+
       {/* KPIs */}
       <div className="kpi-grid kpi-grid--wide">
         <div className="kpi-card kpi-highlight">
@@ -633,7 +829,7 @@ export function PortfolioDashboard() {
       </div>
 
       {/* ───── Section: Performance ───── */}
-      <section className="portfolio-section" aria-labelledby="section-performance">
+      <section id="performance" className="portfolio-section" aria-labelledby="section-performance">
         <h2 id="section-performance" className="portfolio-section-title">Performance</h2>
 
         <ChartCard
@@ -759,7 +955,7 @@ export function PortfolioDashboard() {
       </section>
 
       {/* ───── Section: Ventes ───── */}
-      <section className="portfolio-section" aria-labelledby="section-ventes">
+      <section id="ventes" className="portfolio-section" aria-labelledby="section-ventes">
         <h2 id="section-ventes" className="portfolio-section-title">Ventes</h2>
 
         <ChartCard
@@ -810,40 +1006,18 @@ export function PortfolioDashboard() {
       </section>
 
       {/* ───── Section: Répartition inventaire ───── */}
-      <section className="portfolio-section" aria-labelledby="section-repartition">
+      <section id="repartition" className="portfolio-section" aria-labelledby="section-repartition">
         <h2 id="section-repartition" className="portfolio-section-title">Répartition inventaire</h2>
 
         <div className="charts-grid charts-grid--3">
           <ChartCard
             title="Inventaire par jeu"
-            subtitle="Nombre de cartes par univers. Les cartes sans cote sont incluses dans les effectifs."
+            subtitle="Nombre de cartes par univers."
           >
           {gameInventoryData.length === 0 ? (
             <EmptyChart message="Aucune carte dans l'inventaire." />
           ) : (
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={gameInventoryData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={90}
-                  paddingAngle={2}
-                  label={({ name, percent }: { name?: string; percent?: number }) =>
-                    `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {gameInventoryData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={renderQtyTooltip} />
-              </PieChart>
-            </ResponsiveContainer>
+            <DistributionBar items={gameInventoryData} />
           )}
         </ChartCard>
 
@@ -854,29 +1028,7 @@ export function PortfolioDashboard() {
           {languageData.length === 0 ? (
             <EmptyChart message="Aucune donnée de langue." />
           ) : (
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie
-                  data={languageData}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={90}
-                  paddingAngle={2}
-                  label={({ name, percent }: { name?: string; percent?: number }) =>
-                    `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`
-                  }
-                  labelLine={false}
-                >
-                  {languageData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[(i + 3) % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={renderQtyTooltip} />
-              </PieChart>
-            </ResponsiveContainer>
+            <DistributionBar items={languageData} colorOffset={3} />
           )}
         </ChartCard>
 
@@ -965,6 +1117,18 @@ export function PortfolioDashboard() {
       </div>
       </section>
 
+      {/* ───── Section: Détail P&L par carte ───── */}
+      <section id="pnl-detail" className="portfolio-section" aria-labelledby="section-pnl">
+        <h2 id="section-pnl" className="portfolio-section-title">P&amp;L par carte (non réalisé)</h2>
+        <ChartCard
+          title="Détail par position"
+          subtitle="Cote marché (Cardmarket) vs coût d'acquisition renseigné. Le P&L et le ROI ne sont calculés que si vous avez saisi un prix d'acquisition. Triez les colonnes en cliquant sur les en-têtes."
+          className="chart-full"
+        >
+          <PnlBreakdownTable items={portfolio.breakdown ?? []} />
+        </ChartCard>
+      </section>
+
       {/* Cartes de ma collection (inventaire) */}
       <section id="inventaire" className="portfolio-inventaire" aria-labelledby="inventaire-title">
         <h2 id="inventaire-title" className="chart-card-title">Cartes de ma collection</h2>
@@ -1006,6 +1170,9 @@ export function PortfolioDashboard() {
             <ul className="inventory-list" role="list" aria-label="Liste des cartes de la collection">
               {collectionItems.map((item) => (
                 <li key={item.id} className="inventory-item">
+                  <div className="inventory-item-thumb" aria-hidden="true">
+                    {(item.cardName || item.cardId).charAt(0).toUpperCase()}
+                  </div>
                   <div className="inventory-item-main">
                     <span className="inventory-item-name">{item.cardName || item.cardId}</span>
                     <span className="inventory-item-meta">
@@ -1083,30 +1250,56 @@ export function PortfolioDashboard() {
                 {addError}
               </div>
             )}
+
+            {/* Sélecteur de jeu — en premier */}
             <div className="create-listing-field">
-              <label>Rechercher une carte</label>
-              <CardAutocomplete
-                placeholder="ex. Pikachu, Charizard…"
-                aria-label="Recherche de carte pour ajout à la collection"
-                language={addForm.language}
-                onSelect={({ cardId, cardName, setCode, setName, image, rarity, number, pricing, marketPricing }) => {
-                  setCardImageFallbackEn(false);
-                  lastFetchedLangRef.current = addForm.language;
-                  setAddForm((f) => ({
-                    ...f,
-                    cardId,
-                    cardName,
-                    setCode: setCode ?? setName ?? f.setCode,
-                    cardImage: image ?? "",
-                    cardSetName: setName ?? f.cardSetName,
-                    cardRarity: rarity ?? "",
-                    cardNumber: number ?? "",
-                    cardPricing: pricing ?? undefined,
-                    marketPricing: marketPricing ?? undefined,
-                  }));
-                }}
-              />
+              <label htmlFor="inv-game">Jeu *</label>
+              <div className="inv-game-selector">
+                {GAMES.map((g) => (
+                  <button
+                    key={g.value}
+                    type="button"
+                    className={`inv-game-btn${addForm.game === g.value ? " inv-game-btn--active" : ""}`}
+                    onClick={() => setAddForm((f) => ({ ...f, game: g.value, cardId: "", cardName: "", setCode: "", cardImage: "", cardSetName: "", cardRarity: "", cardNumber: "", cardPricing: undefined, marketPricing: undefined }))}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Recherche automatique — Pokémon via TCGdex, note pour les autres */}
+            <div className="create-listing-field">
+              <label>Recherche rapide{addForm.game === "POKEMON" ? "" : " (Pokémon uniquement)"}</label>
+              {addForm.game === "POKEMON" ? (
+                <CardAutocomplete
+                  placeholder="Rechercher une carte Pokémon…"
+                  aria-label="Recherche de carte pour ajout à la collection"
+                  language={addForm.language}
+                  onSelect={({ cardId, cardName, setCode, setName, image, rarity, number, pricing, marketPricing }) => {
+                    setCardImageFallbackEn(false);
+                    lastFetchedLangRef.current = addForm.language;
+                    setAddForm((f) => ({
+                      ...f,
+                      cardId,
+                      cardName,
+                      setCode: setCode ?? setName ?? f.setCode,
+                      cardImage: image ?? "",
+                      cardSetName: setName ?? f.cardSetName,
+                      cardRarity: rarity ?? "",
+                      cardNumber: number ?? "",
+                      cardPricing: pricing ?? undefined,
+                      marketPricing: marketPricing ?? undefined,
+                    }));
+                  }}
+                />
+              ) : (
+                <p className="create-listing-hint" style={{ marginTop: 2 }}>
+                  La recherche automatique est disponible pour Pokémon. Pour {GAMES.find((g) => g.value === addForm.game)?.label ?? "ce jeu"}, renseignez les informations manuellement ci-dessous.
+                </p>
+              )}
+            </div>
+
             <div className="inventory-add-grid">
               <div className="create-listing-field">
                 <label htmlFor="inv-cardId">Identifiant carte *</label>
@@ -1114,7 +1307,7 @@ export function PortfolioDashboard() {
                   id="inv-cardId"
                   type="text"
                   className="input"
-                  placeholder="ex. charizard-001"
+                  placeholder="ex. op01-001, yst001, charizard-001"
                   value={addForm.cardId}
                   onChange={(e) => setAddForm((f) => ({ ...f, cardId: e.target.value }))}
                 />
@@ -1125,7 +1318,7 @@ export function PortfolioDashboard() {
                   id="inv-cardName"
                   type="text"
                   className="input"
-                  placeholder="ex. Charizard"
+                  placeholder="ex. Luffy, Charizard, Black Lotus"
                   value={addForm.cardName}
                   onChange={(e) => setAddForm((f) => ({ ...f, cardName: e.target.value }))}
                 />
@@ -1136,7 +1329,7 @@ export function PortfolioDashboard() {
                   id="inv-setCode"
                   type="text"
                   className="input"
-                  placeholder="ex. basep, cel25"
+                  placeholder="ex. OP01, cel25, LEA"
                   value={addForm.setCode}
                   onChange={(e) => setAddForm((f) => ({ ...f, setCode: e.target.value }))}
                 />
