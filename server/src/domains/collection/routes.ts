@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma, Language, CardCondition } from "@prisma/client";
+import { Prisma, Language, CardCondition, Game } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
 import { requireNotBanned } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
@@ -8,6 +8,7 @@ import { asyncHandler } from "../../shared/http/asyncHandler.js";
 import { AppError } from "../../shared/http/response.js";
 import { prisma } from "../../shared/db/prisma.js";
 import { snapshotPortfolio } from "../../shared/pricing/portfolio.js";
+import { fetchAndStoreSingleBoutiquePrice } from "../../jobs/importPricesFromBoutique.js";
 import { paginationQuerySchema, decodeCursor, buildPage } from "../../shared/http/pagination.js";
 
 const router = Router();
@@ -24,6 +25,7 @@ const upsertCollectionItemSchema = z.object({
   cardId: z.string().min(1),
   cardName: z.string().optional(),
   setCode: z.string().optional(),
+  game: z.nativeEnum(Game).optional(),
   language: z.nativeEnum(Language),
   condition: z.nativeEnum(CardCondition),
   quantity: z.number().int().min(1),
@@ -217,6 +219,7 @@ router.put(
           quantity: body.quantity,
           ...(body.cardName !== undefined ? { cardName: body.cardName } : {}),
           ...(body.setCode !== undefined ? { setCode: body.setCode } : {}),
+          ...(body.game !== undefined ? { game: body.game } : {}),
           ...(body.isPublic !== undefined ? { isPublic: body.isPublic } : {}),
           ...(body.acquiredAt !== undefined ? { acquiredAt: body.acquiredAt } : {}),
           ...(body.acquisitionPriceCents !== undefined
@@ -231,6 +234,7 @@ router.put(
           cardId: body.cardId,
           cardName: body.cardName ?? null,
           setCode: body.setCode ?? null,
+          game: body.game ?? null,
           language: body.language,
           condition: body.condition,
           quantity: body.quantity,
@@ -250,10 +254,19 @@ router.put(
         await snapshotPortfolio(userId, tx);
       }
 
-      return upserted;
+      return { upserted, isNew: !before };
     });
 
-    ok(res, { item });
+    // For new cards: await price fetch (with timeout) so portfolio can show cote/ROI/P&L right after add
+    if (item.isNew) {
+      const PRICE_FETCH_TIMEOUT_MS = 4500;
+      await Promise.race([
+        fetchAndStoreSingleBoutiquePrice(body.cardId, body.language).catch(() => {}),
+        new Promise<void>((r) => setTimeout(r, PRICE_FETCH_TIMEOUT_MS)),
+      ]);
+    }
+
+    ok(res, { item: item.upserted });
   }),
 );
 

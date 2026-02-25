@@ -479,6 +479,8 @@ model DailyPriceSnapshot {
   lowCents    Int?
   avgCents    Int?
   highCents   Int?
+  avg7Cents   Int?
+  avg30Cents  Int?
   rawJson     Json?
 
   @@unique([cardId, language, source, day])

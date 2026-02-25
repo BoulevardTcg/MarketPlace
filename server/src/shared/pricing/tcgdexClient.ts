@@ -4,6 +4,8 @@
  * Base URL: https://api.tcgdex.net/v2/{lang}/cards/{cardId}
  */
 
+import { logger } from "../observability/logger.js";
+
 const TCGDEX_BASE = "https://api.tcgdex.net/v2";
 const TIMEOUT_MS = 10_000;
 
@@ -44,6 +46,8 @@ export interface TcgdexPriceResult {
   lowCents: number | null;
   avgCents: number | null;
   highCents: number | null;
+  avg7Cents: number | null;
+  avg30Cents: number | null;
   rawJson: TcgdexCardmarketPrices;
 }
 
@@ -59,16 +63,15 @@ export function toTcgdexLang(language: string): string {
 }
 
 /**
- * Fetch a card's Cardmarket prices from TCGdex.
- * Returns null if the card is not found or has no pricing data.
+ * Inner: fetch Cardmarket prices from TCGdex for a specific lang code.
+ * Returns null on 404, no pricing data, or timeout.
  */
-export async function fetchCardPrice(
+async function fetchCardPriceLang(
   cardId: string,
-  language: string,
+  lang: string,
+  originalLanguage: string,
 ): Promise<TcgdexPriceResult | null> {
-  const lang = toTcgdexLang(language);
   const url = `${TCGDEX_BASE}/${lang}/cards/${encodeURIComponent(cardId)}`;
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -78,35 +81,73 @@ export async function fetchCardPrice(
       headers: { Accept: "application/json" },
     });
 
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      logger.debug("tcgdex: card not found (404)", { cardId, lang, url });
+      return null;
+    }
     if (!res.ok) {
       throw new Error(`TCGdex API error: ${res.status} ${res.statusText}`);
     }
 
     const data = (await res.json()) as TcgdexCardResponse;
     const cm = data.cardmarket;
-    if (!cm || cm.trend == null) return null;
+    if (!cm || cm.trend == null) {
+      logger.debug("tcgdex: no cardmarket pricing", { cardId, lang, hasCardmarket: !!cm });
+      return null;
+    }
 
     const trendCents = eurToCents(cm.trend);
     if (trendCents == null) return null;
 
     return {
       cardId,
-      language,
+      language: originalLanguage,
       trendCents,
       lowCents: eurToCents(cm.low),
       avgCents: eurToCents(cm.avg),
-      highCents: null, // TCGdex doesn't expose a "high" price
+      highCents: null,
+      avg7Cents: eurToCents(cm.avg7),
+      avg30Cents: eurToCents(cm.avg30),
       rawJson: cm,
     };
   } catch (err: any) {
     if (err.name === "AbortError") {
-      throw new Error(`TCGdex API timeout for ${cardId} (${lang})`);
+      return null; // timeout → graceful degradation
     }
     throw err;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Fetch a card's Cardmarket prices from TCGdex.
+ * Tries the card's own language first, then falls back to "en":
+ * Cardmarket prices are EUR-based and language-agnostic, but TCGdex
+ * sometimes only indexes the Cardmarket product for the EN endpoint
+ * (especially for recent SV-era sets).
+ * Returns null if no pricing data is found in any language.
+ */
+export async function fetchCardPrice(
+  cardId: string,
+  language: string,
+): Promise<TcgdexPriceResult | null> {
+  const primaryLang = toTcgdexLang(language);
+
+  const result = await fetchCardPriceLang(cardId, primaryLang, language);
+  if (result != null) return result;
+
+  // EN fallback: TCGdex has more complete Cardmarket coverage on the EN endpoint.
+  // Skip if primary was already EN.
+  if (primaryLang !== "en") {
+    const fallback = await fetchCardPriceLang(cardId, "en", language);
+    if (fallback != null) {
+      logger.debug("tcgdex: pricing found via EN fallback", { cardId, primaryLang });
+    }
+    return fallback;
+  }
+
+  return null;
 }
 
 /** Result for card details (image + metadata) from TCGdex. */

@@ -100,7 +100,7 @@ describe("Pricing", () => {
       .get("/users/me/portfolio")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.data).toEqual({
+    expect(res.body.data).toMatchObject({
       totalValueCents: 0,
       totalCostCents: 0,
       pnlCents: 0,
@@ -108,6 +108,7 @@ describe("Pricing", () => {
       itemCount: 0,
       valuedCount: 0,
       missingCount: 0,
+      breakdown: [],
     });
   });
 

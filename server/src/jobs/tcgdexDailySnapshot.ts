@@ -4,6 +4,8 @@
  * Usage:  npx tsx src/jobs/tcgdexDailySnapshot.ts
  * npm:    npm run job:tcgdex
  *
+ * Also run automatically: once at server startup (catch-up) and daily at 06:00 UTC (cron).
+ *
  * Cards to fetch are determined from:
  *   1. Distinct (cardId, language) in UserCollection
  *   2. Distinct (cardId, language) in Listing (status PUBLISHED or SOLD)
@@ -11,15 +13,15 @@
  *
  * Each card is fetched once per (cardId, language) per day (UTC).
  * If a snapshot already exists for today, it is updated (upsert).
+ * avg7Cents / avg30Cents from TCGdex are persisted for curves.
  */
 
 import dotenv from "dotenv";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { prisma } from "../shared/db/prisma.js";
 import { fetchCardPrice } from "../shared/pricing/tcgdexClient.js";
 import { PriceSource } from "@prisma/client";
-
-dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 /** Normalize a Date to UTC midnight (day granularity). */
 function utcToday(): Date {
@@ -44,14 +46,12 @@ async function collectCardPairs(): Promise<{ cardId: string; language: string }[
     pairs.push({ cardId, language });
   };
 
-  // 1. UserCollection
   const collectionPairs = await prisma.userCollection.findMany({
     select: { cardId: true, language: true },
     distinct: ["cardId", "language"],
   });
   for (const p of collectionPairs) addPair(p.cardId, p.language);
 
-  // 2. Published / Sold listings
   const listingPairs = await prisma.listing.findMany({
     where: { status: { in: ["PUBLISHED", "SOLD"] }, cardId: { not: null } },
     select: { cardId: true, language: true },
@@ -59,7 +59,6 @@ async function collectCardPairs(): Promise<{ cardId: string; language: string }[
   });
   for (const p of listingPairs) addPair(p.cardId, p.language);
 
-  // 3. Fallback: ExternalProductRef with TCGDEX source
   if (pairs.length === 0) {
     const refs = await prisma.externalProductRef.findMany({
       where: { source: PriceSource.TCGDEX },
@@ -71,81 +70,120 @@ async function collectCardPairs(): Promise<{ cardId: string; language: string }[
   return pairs;
 }
 
-async function main() {
-  const day = utcToday();
-  console.log(`[tcgdex-snapshot] Starting daily snapshot for ${day.toISOString().slice(0, 10)}`);
+export interface TcgdexSnapshotResult {
+  success: number;
+  skipped: number;
+  failed: number;
+  total: number;
+}
 
-  const pairs = await collectCardPairs();
-  console.log(`[tcgdex-snapshot] ${pairs.length} card/language pairs to process`);
+type Log = { info(msg: string, meta?: Record<string, unknown>): void; error(msg: string, meta?: Record<string, unknown>): void };
 
-  if (pairs.length === 0) {
-    console.log("[tcgdex-snapshot] No cards to process. Done.");
-    return;
+/** Guard against concurrent executions (startup catch-up + cron firing at the same time). */
+let isRunning = false;
+
+/**
+ * Run the TCGdex daily snapshot job (fetch prices, upsert DailyPriceSnapshot for today).
+ * Does not disconnect Prisma — caller manages connection.
+ * Safe to call from server startup or cron. Skips silently if already running.
+ */
+export async function runTcgdexDailySnapshot(log: Log | null = null): Promise<TcgdexSnapshotResult> {
+  const out = log ?? { info: (m: string) => console.log(m), error: (m: string) => console.error(m) };
+
+  if (isRunning) {
+    out.info("[tcgdex-snapshot] Already running, skipping concurrent execution.");
+    return { success: 0, skipped: 0, failed: 0, total: 0 };
   }
+  isRunning = true;
 
-  let success = 0;
-  let skipped = 0;
-  let failed = 0;
+  const day = utcToday();
+  out.info(`[tcgdex-snapshot] Starting daily snapshot for ${day.toISOString().slice(0, 10)}`);
 
-  for (let i = 0; i < pairs.length; i++) {
-    const { cardId, language } = pairs[i];
+  try {
+    const pairs = await collectCardPairs();
+    out.info(`[tcgdex-snapshot] ${pairs.length} card/language pairs to process`, { count: pairs.length });
 
-    try {
-      const result = await fetchCardPrice(cardId, language);
+    if (pairs.length === 0) {
+      out.info("[tcgdex-snapshot] No cards to process. Done.");
+      return { success: 0, skipped: 0, failed: 0, total: 0 };
+    }
 
-      if (!result) {
-        skipped++;
-        continue;
-      }
+    let success = 0;
+    let skipped = 0;
+    let failed = 0;
 
-      await prisma.dailyPriceSnapshot.upsert({
-        where: {
-          cardId_language_source_day: {
+    for (let i = 0; i < pairs.length; i++) {
+      const { cardId, language } = pairs[i];
+
+      try {
+        const result = await fetchCardPrice(cardId, language);
+
+        if (!result) {
+          skipped++;
+          continue;
+        }
+
+        await prisma.dailyPriceSnapshot.upsert({
+          where: {
+            cardId_language_source_day: {
+              cardId,
+              language: language as any,
+              source: PriceSource.TCGDEX,
+              day,
+            },
+          },
+          create: {
             cardId,
             language: language as any,
             source: PriceSource.TCGDEX,
             day,
+            trendCents: result.trendCents,
+            lowCents: result.lowCents,
+            avgCents: result.avgCents,
+            highCents: result.highCents,
+            avg7Cents: result.avg7Cents,
+            avg30Cents: result.avg30Cents,
+            rawJson: result.rawJson as any,
           },
-        },
-        create: {
-          cardId,
-          language: language as any,
-          source: PriceSource.TCGDEX,
-          day,
-          trendCents: result.trendCents,
-          lowCents: result.lowCents,
-          avgCents: result.avgCents,
-          highCents: result.highCents,
-          rawJson: result.rawJson as any,
-        },
-        update: {
-          trendCents: result.trendCents,
-          lowCents: result.lowCents,
-          avgCents: result.avgCents,
-          highCents: result.highCents,
-          rawJson: result.rawJson as any,
-          capturedAt: new Date(),
-        },
-      });
-      success++;
-    } catch (err: any) {
-      failed++;
-      console.error(`[tcgdex-snapshot] Error for ${cardId}/${language}: ${err.message}`);
+          update: {
+            trendCents: result.trendCents,
+            lowCents: result.lowCents,
+            avgCents: result.avgCents,
+            highCents: result.highCents,
+            avg7Cents: result.avg7Cents,
+            avg30Cents: result.avg30Cents,
+            rawJson: result.rawJson as any,
+            capturedAt: new Date(),
+          },
+        });
+        success++;
+      } catch (err: any) {
+        failed++;
+        out.error(`[tcgdex-snapshot] Error for ${cardId}/${language}: ${err.message}`, { cardId, language });
+      }
+
+      if (i < pairs.length - 1) await delay(200);
     }
 
-    // Rate-limit: 200ms between requests
-    if (i < pairs.length - 1) await delay(200);
+    out.info(
+      `[tcgdex-snapshot] Done. success=${success} skipped=${skipped} failed=${failed} total=${pairs.length}`,
+      { success, skipped, failed, total: pairs.length },
+    );
+    return { success, skipped, failed, total: pairs.length };
+  } finally {
+    isRunning = false;
   }
-
-  console.log(
-    `[tcgdex-snapshot] Done. success=${success} skipped=${skipped} failed=${failed} total=${pairs.length}`,
-  );
 }
 
-main()
-  .then(() => prisma.$disconnect())
-  .catch((e) => {
-    console.error("[tcgdex-snapshot] Fatal error:", e);
-    prisma.$disconnect();
-    process.exit(1);
-  });
+// When run as CLI script (npm run job:tcgdex), not when imported by main
+const isCli = process.argv[1] === fileURLToPath(import.meta.url);
+if (isCli) {
+  dotenv.config({ path: resolve(process.cwd(), ".env") });
+  runTcgdexDailySnapshot()
+    .then(() => prisma.$disconnect())
+    .catch((e) => {
+      console.error("[tcgdex-snapshot] Fatal error:", e);
+      prisma.$disconnect();
+      process.exit(1);
+    });
+}

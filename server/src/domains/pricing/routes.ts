@@ -123,6 +123,8 @@ router.get(
         lowCents: true,
         avgCents: true,
         highCents: true,
+        avg7Cents: true,
+        avg30Cents: true,
       },
     });
 
@@ -132,6 +134,8 @@ router.get(
       lowCents: s.lowCents,
       avgCents: s.avgCents,
       highCents: s.highCents,
+      avg7Cents: s.avg7Cents,
+      avg30Cents: s.avg30Cents,
     }));
 
     const trendValues = snapshots
@@ -150,14 +154,24 @@ router.get(
   }),
 );
 
-// GET /users/me/portfolio — computed portfolio value (auth required)
+const portfolioQuerySchema = z.object({
+  live: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1" || v === "yes"),
+});
+
+// GET /users/me/portfolio — computed portfolio value (auth required). ?live=true = fetch TCGdex on the fly for instant cote
 router.get(
   "/users/me/portfolio",
   requireAuth,
   profileGate,
   asyncHandler(async (req, res) => {
     const userId = (req as RequestWithUser).user.userId;
-    const portfolio = await computePortfolioValue(userId);
+    const query = portfolioQuerySchema.parse(req.query);
+    const portfolio = await computePortfolioValue(userId, prisma, {
+      live: query.live ?? false,
+    });
     ok(res, { ...portfolio, currency: "EUR" });
   }),
 );
