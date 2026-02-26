@@ -334,6 +334,226 @@ export async function getCardDetailsFromMarket(
   return body?.data !== undefined ? body.data : body;
 }
 
+// ─── Notifications ────────────────────────────────────────────────────────────
+import type {
+  Notification,
+  PurchaseOrder,
+  ListingShipping,
+  ShippingMethod,
+  ListingQuestion,
+  SellerReview,
+  SellerReviewSummary,
+} from "./types/marketplace";
+
+export async function getNotifications(params?: {
+  cursor?: string;
+  limit?: number;
+  unread?: boolean;
+}): Promise<{ items: Notification[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams();
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.unread) qs.set("unread", "true");
+  const res = await fetchWithAuth(`/notifications?${qs}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function getUnreadNotificationCount(): Promise<number> {
+  const res = await fetchWithAuth("/notifications/unread-count");
+  if (!res.ok) return 0;
+  const body = await res.json();
+  return body.data?.count ?? 0;
+}
+
+export async function markNotificationsRead(ids: string[]): Promise<void> {
+  await fetchWithAuth("/notifications/read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await fetchWithAuth("/notifications/read-all", { method: "POST" });
+}
+
+export async function deleteNotification(id: string): Promise<void> {
+  await fetchWithAuth(`/notifications/${id}`, { method: "DELETE" });
+}
+
+// ─── Purchase Orders ──────────────────────────────────────────────────────────
+
+export async function buyListing(
+  listingId: string,
+): Promise<{ orderId: string; priceCents: number; currency: string }> {
+  const res = await fetchWithAuth(`/marketplace/listings/${listingId}/buy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body.data;
+}
+
+export async function getMyPurchases(params?: {
+  cursor?: string;
+  limit?: number;
+}): Promise<{ items: PurchaseOrder[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams();
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetchWithAuth(`/marketplace/me/purchases?${qs}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function getMyOrders(params?: {
+  cursor?: string;
+  limit?: number;
+}): Promise<{ items: PurchaseOrder[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams();
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetchWithAuth(`/marketplace/me/orders?${qs}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+// ─── Shipping ─────────────────────────────────────────────────────────────────
+
+export async function getListingShipping(
+  listingId: string,
+): Promise<{ shipping: ListingShipping | null }> {
+  const res = await fetchWithAuth(`/marketplace/listings/${listingId}/shipping`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function setListingShipping(
+  listingId: string,
+  data: {
+    method: ShippingMethod;
+    isFree: boolean;
+    priceCents?: number;
+    currency?: string;
+    estimatedDays?: string;
+    description?: string;
+  },
+): Promise<{ shipping: ListingShipping }> {
+  const res = await fetchWithAuth(`/marketplace/listings/${listingId}/shipping`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body.data;
+}
+
+// ─── Q&A ──────────────────────────────────────────────────────────────────────
+
+export async function getListingQuestions(
+  listingId: string,
+  params?: { cursor?: string; limit?: number },
+): Promise<{ items: ListingQuestion[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams();
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetchWithAuth(`/marketplace/listings/${listingId}/questions?${qs}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function askListingQuestion(
+  listingId: string,
+  question: string,
+): Promise<{ questionId: string }> {
+  const res = await fetchWithAuth(`/marketplace/listings/${listingId}/questions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body.data;
+}
+
+export async function answerListingQuestion(
+  listingId: string,
+  questionId: string,
+  answer: string,
+): Promise<void> {
+  const res = await fetchWithAuth(
+    `/marketplace/listings/${listingId}/questions/${questionId}/answer`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+}
+
+// ─── Seller Reviews ───────────────────────────────────────────────────────────
+
+export async function getSellerReviewSummary(userId: string): Promise<SellerReviewSummary> {
+  const res = await fetchWithAuth(`/users/${userId}/reviews/summary`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function getSellerReviews(
+  userId: string,
+  params?: { cursor?: string; limit?: number },
+): Promise<{ items: SellerReview[]; nextCursor: string | null }> {
+  const qs = new URLSearchParams();
+  if (params?.cursor) qs.set("cursor", params.cursor);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const res = await fetchWithAuth(`/users/${userId}/reviews?${qs}`);
+  if (!res.ok) throw new Error(`Erreur ${res.status}`);
+  const body = await res.json();
+  return body.data;
+}
+
+export async function createReview(data: {
+  sellerUserId: string;
+  rating: number;
+  comment?: string;
+  listingId?: string;
+  tradeOfferId?: string;
+}): Promise<{ reviewId: string }> {
+  const res = await fetchWithAuth("/reviews", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Erreur ${res.status}`);
+  }
+  const body = await res.json();
+  return body.data;
+}
+
 export type CreateSaleTransactionPayload = {
   lang: string;
   price: number;

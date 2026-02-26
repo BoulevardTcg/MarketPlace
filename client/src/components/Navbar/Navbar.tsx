@@ -16,6 +16,7 @@ import {
 import { LiquidMetalIconButton } from "../ui/LiquidMetalIconButton";
 import { SearchBox } from "./SearchBox";
 import { MobileBottomSheet } from "./MobileBottomSheet";
+import { NotificationBell } from "../NotificationBell";
 import "./Navbar.css";
 
 const NAV_LINKS = [
@@ -127,6 +128,9 @@ export function Navbar({ theme, onToggleTheme }: NavbarProps) {
                   )}
                 </span>
               </LiquidMetalIconButton>
+
+              {/* Notification bell — authenticated only */}
+              {isAuthenticated && <NotificationBell />}
 
               {/* Cart */}
               <button

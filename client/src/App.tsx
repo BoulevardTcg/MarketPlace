@@ -16,6 +16,7 @@ const MyListings = lazy(() => import("./pages/MyListings").then((m) => ({ defaul
 const EditListing = lazy(() => import("./pages/EditListing").then((m) => ({ default: m.EditListing })));
 const PortfolioDashboard = lazy(() => import("./pages/PortfolioDashboard").then((m) => ({ default: m.PortfolioDashboard })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
+const PurchasesPage = lazy(() => import("./pages/PurchasesPage").then((m) => ({ default: m.PurchasesPage })));
 
 function PageFallback() {
   return (
@@ -177,6 +178,7 @@ function AppContent() {
               />
             }
           />
+          <Route path="/achats" element={<PurchasesPage />} />
           <Route path="/connexion" element={<LoginPage />} />
           <Route
             path="/admin"
