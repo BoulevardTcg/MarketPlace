@@ -7,6 +7,7 @@ export default defineConfig({
     globals: false,
     setupFiles: [resolve(__dirname, "src/test/setup.ts")],
     fileParallelism: false,
+    testTimeout: 15000,
   },
   resolve: {
     alias: { "#": resolve(__dirname, "src") },

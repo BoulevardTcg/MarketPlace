@@ -15,6 +15,7 @@ export { FilterBar as FiltersPanel } from "./FilterBar";
 export { InventorySelector } from "./InventorySelector";
 export { SortSelect } from "./SortSelect";
 export { PageHeader } from "./ui/PageHeader";
+export { StarRating } from "./StarRating";
 export type { Filters } from "./FilterBar";
 export type { InventorySelectorItem } from "./InventorySelector";
 export type { PageHeaderProps } from "./ui/PageHeader";

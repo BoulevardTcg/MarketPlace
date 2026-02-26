@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Prisma, TradeOfferStatus, TradeEventType } from "@prisma/client";
+import { Prisma, TradeOfferStatus, TradeEventType, NotificationType } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
 import { requireNotBanned, assertNotBannedInTx } from "../../shared/auth/requireNotBanned.js";
 import { ok } from "../../shared/http/response.js";
@@ -21,6 +21,7 @@ import {
 import { parseTradeItems } from "../../shared/trade/items.js";
 import type { TradeItem } from "../../shared/trade/items.js";
 import type { PrismaClient } from "@prisma/client";
+import { createNotification } from "../../shared/notifications/createNotification.js";
 
 const router = Router();
 
@@ -177,6 +178,13 @@ router.post(
           actorUserId: creatorUserId,
           metadataJson: { source: "api" },
         },
+      });
+      await createNotification(tx, {
+        userId: body.receiverUserId,
+        type: NotificationType.TRADE_OFFER_RECEIVED,
+        title: "Nouvelle offre d'échange",
+        body: "Vous avez reçu une nouvelle offre d'échange.",
+        dataJson: { tradeOfferId: offer.id, fromUserId: creatorUserId },
       });
       return offer;
     });
@@ -454,6 +462,13 @@ router.post(
           metadataJson: { source: "api" },
         },
       });
+      await createNotification(tx, {
+        userId: offer.creatorUserId,
+        type: NotificationType.TRADE_OFFER_ACCEPTED,
+        title: "Offre d'échange acceptée",
+        body: "Votre offre d'échange a été acceptée.",
+        dataJson: { tradeOfferId: offerId },
+      });
     });
 
     ok(res, { ok: true });
@@ -510,6 +525,13 @@ router.post(
           actorUserId: userId,
           metadataJson: { source: "api" },
         },
+      });
+      await createNotification(tx, {
+        userId: offer.creatorUserId,
+        type: NotificationType.TRADE_OFFER_REJECTED,
+        title: "Offre d'échange refusée",
+        body: "Votre offre d'échange a été refusée.",
+        dataJson: { tradeOfferId: offerId },
       });
     });
 
@@ -579,6 +601,13 @@ router.post(
           metadataJson: { source: "api", counterOfferId: counterOffer.id },
         },
       });
+      await createNotification(tx, {
+        userId: original.creatorUserId,
+        type: NotificationType.TRADE_OFFER_COUNTERED,
+        title: "Contre-offre reçue",
+        body: "Votre offre d'échange a reçu une contre-proposition.",
+        dataJson: { tradeOfferId: originalOfferId, counterOfferId: counterOffer.id },
+      });
       return counterOffer;
     });
 
@@ -636,6 +665,13 @@ router.post(
           actorUserId: userId,
           metadataJson: { source: "api" },
         },
+      });
+      await createNotification(tx, {
+        userId: offer.receiverUserId,
+        type: NotificationType.TRADE_OFFER_CANCELLED,
+        title: "Offre d'échange annulée",
+        body: "Une offre d'échange que vous avez reçue a été annulée.",
+        dataJson: { tradeOfferId: offerId },
       });
     });
 
@@ -759,6 +795,16 @@ router.post(
           lastReadAt: msg.createdAt,
         },
         update: { lastReadAt: msg.createdAt, updatedAt: new Date() },
+      });
+      // Notify the other participant
+      const recipientUserId =
+        offer.creatorUserId === userId ? offer.receiverUserId : offer.creatorUserId;
+      await createNotification(tx, {
+        userId: recipientUserId,
+        type: NotificationType.TRADE_MESSAGE_RECEIVED,
+        title: "Nouveau message",
+        body: `Nouveau message dans votre échange : "${body.body.slice(0, 80)}${body.body.length > 80 ? "…" : ""}"`,
+        dataJson: { tradeOfferId: offerId, messageId: msg.id },
       });
       return msg;
     });

@@ -178,3 +178,115 @@ export const STATUS_LABELS: Record<ListingStatus, string> = {
   SOLD: "Vendu",
   ARCHIVED: "Archive",
 };
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+export type NotificationType =
+  | "TRADE_OFFER_RECEIVED"
+  | "TRADE_OFFER_ACCEPTED"
+  | "TRADE_OFFER_REJECTED"
+  | "TRADE_OFFER_CANCELLED"
+  | "TRADE_OFFER_COUNTERED"
+  | "TRADE_MESSAGE_RECEIVED"
+  | "LISTING_SOLD"
+  | "LISTING_QUESTION_RECEIVED"
+  | "LISTING_QUESTION_ANSWERED"
+  | "PRICE_ALERT_TRIGGERED"
+  | "PURCHASE_ORDER_RECEIVED"
+  | "PURCHASE_ORDER_COMPLETED"
+  | "PURCHASE_ORDER_CANCELLED";
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  dataJson?: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
+// ─── Purchase Orders ──────────────────────────────────────────────────────────
+
+export type PurchaseOrderStatus = "PENDING" | "COMPLETED" | "CANCELLED" | "FAILED";
+
+export interface PurchaseOrder {
+  id: string;
+  buyerUserId: string;
+  listingId: string;
+  status: PurchaseOrderStatus;
+  priceCents: number;
+  currency: string;
+  createdAt: string;
+  updatedAt: string;
+  listing?: {
+    id: string;
+    title: string;
+    priceCents: number;
+    currency: string;
+    status: string;
+    images?: ListingImage[];
+  };
+}
+
+export const ORDER_STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
+  PENDING: "En attente",
+  COMPLETED: "Complété",
+  CANCELLED: "Annulé",
+  FAILED: "Échoué",
+};
+
+// ─── Shipping ─────────────────────────────────────────────────────────────────
+
+export type ShippingMethod = "PICKUP" | "COLISSIMO" | "MONDIAL_RELAY" | "LETTRE_SUIVIE" | "OTHER";
+
+export interface ListingShipping {
+  id: string;
+  listingId: string;
+  method: ShippingMethod;
+  isFree: boolean;
+  priceCents?: number;
+  currency: string;
+  estimatedDays?: string;
+  description?: string;
+}
+
+export const SHIPPING_METHOD_LABELS: Record<ShippingMethod, string> = {
+  PICKUP: "Remise en main propre",
+  COLISSIMO: "Colissimo",
+  MONDIAL_RELAY: "Mondial Relay",
+  LETTRE_SUIVIE: "Lettre suivie",
+  OTHER: "Autre",
+};
+
+// ─── Q&A ──────────────────────────────────────────────────────────────────────
+
+export interface ListingQuestion {
+  id: string;
+  listingId: string;
+  askerId: string;
+  question: string;
+  answer?: string;
+  answeredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Seller Reviews ───────────────────────────────────────────────────────────
+
+export interface SellerReview {
+  id: string;
+  reviewerUserId: string;
+  sellerUserId: string;
+  rating: number;
+  comment?: string;
+  listingId?: string;
+  tradeOfferId?: string;
+  createdAt: string;
+}
+
+export interface SellerReviewSummary {
+  avgRating: number | null;
+  totalCount: number;
+  breakdown: { 1: number; 2: number; 3: number; 4: number; 5: number };
+}

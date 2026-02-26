@@ -42,6 +42,8 @@ const envSchema = z.object({
   PRICE_IMPORT_ENABLED: z.enum(["true", "false"]).default("false"),
   /** Enable profile-type gating on pricing/trade routes. Default OFF for backwards compatibility. */
   PROFILE_GATE_ENABLED: z.enum(["true", "false"]).default("false"),
+  /** HMAC-SHA256 secret for verifying payment webhooks from the Shop service. */
+  WEBHOOK_SECRET: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

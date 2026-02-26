@@ -79,9 +79,14 @@ export function MyListings() {
         title="Mes annonces"
         subtitle="Gérez vos brouillons et annonces en ligne."
         action={
-          <Link to="/annonces/new" className="btn btn-primary">
-            Nouvelle annonce
-          </Link>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <Link to="/achats" className="btn btn-secondary">
+              Achats & Commandes
+            </Link>
+            <Link to="/annonces/new" className="btn btn-primary">
+              Nouvelle annonce
+            </Link>
+          </div>
         }
       />
 

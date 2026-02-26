@@ -1,20 +1,24 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { fetchWithAuth, getAccessToken } from "../api";
+import { fetchWithAuth, getAccessToken, setListingShipping } from "../api";
 import type {
   Game,
   Language,
   CardCondition,
   ListingCategory,
+  ShippingMethod,
 } from "../types/marketplace";
 import {
   GAME_LABELS,
   LANGUAGE_LABELS,
   CONDITION_LABELS,
   CATEGORY_LABELS,
+  SHIPPING_METHOD_LABELS,
 } from "../types/marketplace";
 import { PageHeader, CardAutocomplete, InventorySelector } from "../components";
 import { parseEurosToCents, parseQuantity } from "../utils/listing";
+
+const SHIPPING_METHODS: ShippingMethod[] = ["PICKUP", "COLISSIMO", "MONDIAL_RELAY", "LETTRE_SUIVIE", "OTHER"];
 
 /** Item de l'inventaire (collection) — permet de proposer un item en vente et lier l'annonce. */
 export interface CollectionItemForListing {
@@ -71,6 +75,170 @@ const defaultForm: CreateListingForm = {
   quantity: "1",
   publishNow: true,
 };
+
+function CreatedSuccess({
+  listingId,
+  publishDone,
+  onCreateAnother,
+}: {
+  listingId: string;
+  publishDone: boolean;
+  onCreateAnother: () => void;
+}) {
+  const [shippingOpen, setShippingOpen] = useState(false);
+  const [shippingForm, setShippingForm] = useState({
+    method: "COLISSIMO" as ShippingMethod,
+    isFree: false,
+    priceCents: "",
+    estimatedDays: "",
+    description: "",
+  });
+  const [shippingSaving, setShippingSaving] = useState(false);
+  const [shippingDone, setShippingDone] = useState(false);
+  const [shippingError, setShippingError] = useState<string | null>(null);
+
+  const handleSaveShipping = async () => {
+    setShippingSaving(true);
+    setShippingError(null);
+    try {
+      await setListingShipping(listingId, {
+        method: shippingForm.method,
+        isFree: shippingForm.isFree,
+        priceCents: shippingForm.isFree
+          ? undefined
+          : shippingForm.priceCents
+          ? Math.round(parseFloat(shippingForm.priceCents) * 100)
+          : undefined,
+        estimatedDays: shippingForm.estimatedDays || undefined,
+        description: shippingForm.description || undefined,
+      });
+      setShippingDone(true);
+    } catch (err) {
+      setShippingError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setShippingSaving(false);
+    }
+  };
+
+  return (
+    <section className="card card-body">
+      <h1 className="page-title">
+        {publishDone ? "Annonce publiée" : "Annonce créée en brouillon"}
+      </h1>
+      <p className="page-subtitle">
+        {publishDone
+          ? "Votre annonce est en ligne. Les acheteurs peuvent la voir sur le marketplace."
+          : "Vous pouvez la publier plus tard depuis Mes annonces."}
+      </p>
+
+      {/* Shipping optional section */}
+      {!shippingDone && (
+        <div style={{ margin: "var(--space-4) 0", padding: "var(--space-4)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ margin: 0, fontWeight: "var(--font-medium)", fontSize: "var(--text-sm)" }}>
+              Ajouter les informations de livraison (optionnel)
+            </p>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShippingOpen(!shippingOpen)}
+            >
+              {shippingOpen ? "Masquer" : "Ajouter"}
+            </button>
+          </div>
+          {shippingOpen && (
+            <div style={{ marginTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+              <div>
+                <label className="label">Mode d'envoi</label>
+                <select
+                  className="select"
+                  value={shippingForm.method}
+                  onChange={(e) => setShippingForm((f) => ({ ...f, method: e.target.value as ShippingMethod }))}
+                >
+                  {SHIPPING_METHODS.map((m) => (
+                    <option key={m} value={m}>{SHIPPING_METHOD_LABELS[m]}</option>
+                  ))}
+                </select>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={shippingForm.isFree}
+                  onChange={(e) => setShippingForm((f) => ({ ...f, isFree: e.target.checked }))}
+                />
+                <span style={{ fontSize: "var(--text-sm)" }}>Livraison gratuite</span>
+              </label>
+              {!shippingForm.isFree && (
+                <div>
+                  <label className="label">Frais de port (€)</label>
+                  <input
+                    type="number"
+                    className="input"
+                    placeholder="ex: 3.50"
+                    min="0"
+                    step="0.01"
+                    value={shippingForm.priceCents}
+                    onChange={(e) => setShippingForm((f) => ({ ...f, priceCents: e.target.value }))}
+                  />
+                </div>
+              )}
+              <div>
+                <label className="label">Délai estimé (optionnel)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="ex: 2-3 jours"
+                  maxLength={50}
+                  value={shippingForm.estimatedDays}
+                  onChange={(e) => setShippingForm((f) => ({ ...f, estimatedDays: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="label">Description (optionnel)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Précisions sur l'envoi"
+                  maxLength={500}
+                  value={shippingForm.description}
+                  onChange={(e) => setShippingForm((f) => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+              {shippingError && <p className="alert alert-error" style={{ margin: 0 }}>{shippingError}</p>}
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={handleSaveShipping}
+                  disabled={shippingSaving}
+                >
+                  {shippingSaving ? "Enregistrement…" : "Enregistrer la livraison"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {shippingDone && (
+        <p style={{ color: "var(--color-success, #10b981)", fontSize: "var(--text-sm)", margin: "var(--space-3) 0" }}>
+          Informations de livraison enregistrées.
+        </p>
+      )}
+
+      <div className="create-listing-actions">
+        <Link to={`/marketplace/${listingId}`} className="btn btn-primary">
+          Voir l&apos;annonce
+        </Link>
+        <Link to="/annonces" className="btn btn-secondary">
+          Mes annonces
+        </Link>
+        <button type="button" className="btn btn-ghost" onClick={onCreateAnother}>
+          Créer une autre annonce
+        </button>
+      </div>
+    </section>
+  );
+}
 
 export function CreateListing() {
   const location = useLocation();
@@ -235,35 +403,11 @@ export function CreateListing() {
 
   if (createdId) {
     return (
-      <section className="card card-body">
-        <h1 className="page-title">
-          {publishDone ? "Annonce publiée" : "Annonce créée en brouillon"}
-        </h1>
-        <p className="page-subtitle">
-          {publishDone
-            ? "Votre annonce est en ligne. Les acheteurs peuvent la voir sur le marketplace."
-            : "Vous pouvez la publier plus tard depuis Mes annonces."}
-        </p>
-        <div className="create-listing-actions">
-          <Link to={`/marketplace/${createdId}`} className="btn btn-primary">
-            Voir l&apos;annonce
-          </Link>
-          <Link to="/annonces" className="btn btn-secondary">
-            Mes annonces
-          </Link>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              setCreatedId(null);
-              setPublishDone(false);
-              setForm(defaultForm);
-            }}
-          >
-            Créer une autre annonce
-          </button>
-        </div>
-      </section>
+      <CreatedSuccess
+        listingId={createdId}
+        publishDone={publishDone}
+        onCreateAnother={() => { setCreatedId(null); setPublishDone(false); setForm(defaultForm); }}
+      />
     );
   }
 
