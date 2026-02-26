@@ -18,10 +18,15 @@ import { handoverRoutes } from "./domains/handover/routes.js";
 import { uploadRoutes } from "./domains/upload/routes.js";
 import { trustRoutes } from "./domains/trust/routes.js";
 import { profileTypesRoutes } from "./domains/profile-types/routes.js";
+import { notificationsRoutes } from "./domains/notifications/routes.js";
+import { reviewsRoutes } from "./domains/reviews/routes.js";
+import { webhooksRoutes } from "./domains/webhooks/routes.js";
 
 const app = express();
 
 app.use(helmet());
+// Webhooks must receive the raw body before express.json() parses it (HMAC verification)
+app.use("/webhooks", express.raw({ type: "application/json" }));
 app.use(express.json());
 
 // CORS: supports comma-separated origins. En dev, autoriser Boutique (5173) et Marketplace (5174) si non défini.
@@ -78,6 +83,9 @@ app.use(tradeRoutes);
 app.use(collectionRoutes);
 app.use(trustRoutes);
 app.use(profileTypesRoutes);
+app.use(notificationsRoutes);
+app.use(reviewsRoutes);
+app.use(webhooksRoutes);
 
 app.use(errorHandler);
 app.use((_req, res) => {

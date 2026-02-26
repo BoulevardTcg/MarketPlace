@@ -4,6 +4,7 @@ import { env } from "./shared/config/env.js";
 import { logger } from "./shared/observability/logger.js";
 import { runTcgdexDailySnapshot } from "./jobs/tcgdexDailySnapshot.js";
 import { runBoutiquePriceSnapshot } from "./jobs/importPricesFromBoutique.js";
+import { runCheckPriceAlerts } from "./jobs/checkPriceAlerts.js";
 
 const server = app.listen(env.PORT, () => {
   logger.info("Server started", { port: env.PORT, nodeEnv: env.NODE_ENV });
@@ -33,7 +34,14 @@ const server = app.listen(env.PORT, () => {
     });
   });
 
-  logger.info("Jobs scheduled: TCGdex at 06:00 UTC, Boutique prices at 06:05 UTC");
+  // 4. Daily at 07:00 UTC — Check price alerts (after price snapshots are updated)
+  cron.schedule("0 7 * * *", () => {
+    runCheckPriceAlerts(logger).catch((err) => {
+      logger.error("Check price alerts (cron) failed", { error: String(err) });
+    });
+  });
+
+  logger.info("Jobs scheduled: TCGdex at 06:00 UTC, Boutique prices at 06:05 UTC, Price alerts at 07:00 UTC");
 });
 
 server.on("error", (err) => {

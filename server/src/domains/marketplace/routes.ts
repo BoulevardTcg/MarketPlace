@@ -9,6 +9,8 @@ import {
   ListingStatus,
   ListingEventType,
   PriceSource,
+  NotificationType,
+  ShippingMethod,
 } from "@prisma/client";
 import { requireAuth, type RequestWithUser } from "../../shared/auth/requireAuth.js";
 import { requireNotBanned, assertNotBannedInTx } from "../../shared/auth/requireNotBanned.js";
@@ -32,6 +34,7 @@ import {
   deleteListingImageFromS3,
 } from "../../shared/storage/presigned.js";
 import { randomUUID } from "node:crypto";
+import { createNotification } from "../../shared/notifications/createNotification.js";
 
 const router = Router();
 
@@ -1003,6 +1006,375 @@ router.patch(
       orderBy: { sortOrder: "asc" },
     });
     ok(res, { items: updated });
+  }),
+);
+
+// ─── Buyer Purchase Flow ──────────────────────────────────────
+
+// POST /marketplace/listings/:id/buy — buyer initiates a purchase (creates a PurchaseOrder)
+router.post(
+  "/marketplace/listings/:id/buy",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const buyerUserId = (req as RequestWithUser).user.userId;
+
+    const listing = await prisma.listing.findUnique({ where: { id: listingId } });
+    if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+    if (listing.status !== ListingStatus.PUBLISHED) {
+      throw new AppError("INVALID_STATE", "This listing is not available for purchase", 409);
+    }
+    if (listing.userId === buyerUserId) {
+      throw new AppError("FORBIDDEN", "Cannot buy your own listing", 403);
+    }
+
+    // Prevent duplicate PENDING orders from the same buyer
+    const existingOrder = await prisma.purchaseOrder.findFirst({
+      where: { listingId, buyerUserId, status: "PENDING" },
+    });
+    if (existingOrder) {
+      throw new AppError(
+        "CONFLICT",
+        "You already have a pending order for this listing",
+        409,
+      );
+    }
+
+    const order = await prisma.purchaseOrder.create({
+      data: {
+        buyerUserId,
+        listingId,
+        priceCents: listing.priceCents,
+        currency: listing.currency,
+        status: "PENDING",
+      },
+    });
+
+    // Notify seller
+    await createNotification(prisma, {
+      userId: listing.userId,
+      type: NotificationType.PURCHASE_ORDER_RECEIVED,
+      title: "Nouvelle demande d'achat",
+      body: `Un acheteur est intéressé par votre annonce "${listing.title}".`,
+      dataJson: { orderId: order.id, listingId, listingTitle: listing.title, buyerUserId },
+    });
+
+    ok(res, { orderId: order.id, priceCents: order.priceCents, currency: order.currency }, 201);
+  }),
+);
+
+// GET /marketplace/me/purchases — buyer's purchase orders (paginated)
+router.get(
+  "/marketplace/me/purchases",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const buyerUserId = (req as RequestWithUser).user.userId;
+    const query = paginationQuerySchema.parse(req.query);
+    const { cursor, limit } = query;
+
+    const where: Prisma.PurchaseOrderWhereInput = { buyerUserId };
+    if (cursor) {
+      const c = decodeCursor(cursor);
+      where.AND = {
+        OR: [
+          { createdAt: { lt: new Date(c.v as string) } },
+          { createdAt: new Date(c.v as string), id: { lt: c.id as string } },
+        ],
+      };
+    }
+
+    const items = await prisma.purchaseOrder.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            priceCents: true,
+            currency: true,
+            status: true,
+            images: { orderBy: { sortOrder: "asc" }, take: 1 },
+          },
+        },
+      },
+    });
+
+    const page = buildPage(items, limit, (item) => ({
+      v: item.createdAt.toISOString(),
+      id: item.id,
+    }));
+
+    ok(res, page);
+  }),
+);
+
+// GET /marketplace/me/orders — seller's incoming purchase orders (paginated)
+router.get(
+  "/marketplace/me/orders",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = (req as RequestWithUser).user.userId;
+    const query = paginationQuerySchema.parse(req.query);
+    const { cursor, limit } = query;
+
+    // Get orders for listings owned by this user
+    const where: Prisma.PurchaseOrderWhereInput = {
+      listing: { userId },
+    };
+    if (cursor) {
+      const c = decodeCursor(cursor);
+      where.AND = {
+        OR: [
+          { createdAt: { lt: new Date(c.v as string) } },
+          { createdAt: new Date(c.v as string), id: { lt: c.id as string } },
+        ],
+      };
+    }
+
+    const items = await prisma.purchaseOrder.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      include: {
+        listing: {
+          select: {
+            id: true,
+            title: true,
+            priceCents: true,
+            currency: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    const page = buildPage(items, limit, (item) => ({
+      v: item.createdAt.toISOString(),
+      id: item.id,
+    }));
+
+    ok(res, page);
+  }),
+);
+
+// ─── Shipping Information ─────────────────────────────────────
+
+const shippingBodySchema = z.object({
+  method: z.nativeEnum(ShippingMethod),
+  isFree: z.boolean().default(false),
+  priceCents: z.number().int().min(0).optional(),
+  currency: z.string().max(3).default("EUR"),
+  estimatedDays: z.string().max(50).optional(),
+  description: z.string().max(500).optional(),
+});
+
+// POST /marketplace/listings/:id/shipping — set shipping info (owner only)
+router.post(
+  "/marketplace/listings/:id/shipping",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithUser).user.userId;
+    const body = shippingBodySchema.parse(req.body ?? {});
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { userId: true, status: true },
+    });
+    if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+    if (listing.userId !== userId) throw new AppError("FORBIDDEN", "Not allowed", 403);
+    if (
+      listing.status !== ListingStatus.DRAFT &&
+      listing.status !== ListingStatus.PUBLISHED
+    ) {
+      throw new AppError("INVALID_STATE", "Cannot set shipping on a listing in its current state", 409);
+    }
+    if (!body.isFree && body.priceCents === undefined) {
+      throw new AppError("VALIDATION_ERROR", "priceCents is required when isFree is false", 400);
+    }
+
+    const shipping = await prisma.listingShipping.upsert({
+      where: { listingId },
+      create: {
+        listingId,
+        method: body.method,
+        isFree: body.isFree,
+        priceCents: body.isFree ? null : body.priceCents ?? null,
+        currency: body.currency,
+        estimatedDays: body.estimatedDays ?? null,
+        description: body.description ?? null,
+      },
+      update: {
+        method: body.method,
+        isFree: body.isFree,
+        priceCents: body.isFree ? null : body.priceCents ?? null,
+        currency: body.currency,
+        estimatedDays: body.estimatedDays ?? null,
+        description: body.description ?? null,
+      },
+    });
+
+    ok(res, { shipping }, 201);
+  }),
+);
+
+// GET /marketplace/listings/:id/shipping — get shipping info (public)
+router.get(
+  "/marketplace/listings/:id/shipping",
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { id: true, isHidden: true },
+    });
+    if (!listing || listing.isHidden) {
+      throw new AppError("NOT_FOUND", "Listing not found", 404);
+    }
+
+    const shipping = await prisma.listingShipping.findUnique({ where: { listingId } });
+    ok(res, { shipping: shipping ?? null });
+  }),
+);
+
+// ─── Listing Q&A ──────────────────────────────────────────────
+
+const askQuestionBodySchema = z.object({
+  question: z.string().min(5).max(500),
+});
+
+const answerQuestionBodySchema = z.object({
+  answer: z.string().min(1).max(1000),
+});
+
+// POST /marketplace/listings/:id/questions — ask a question (auth, not owner)
+router.post(
+  "/marketplace/listings/:id/questions",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const askerId = (req as RequestWithUser).user.userId;
+    const body = askQuestionBodySchema.parse(req.body ?? {});
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { userId: true, status: true, title: true, isHidden: true },
+    });
+    if (!listing || listing.isHidden) throw new AppError("NOT_FOUND", "Listing not found", 404);
+    if (listing.status !== ListingStatus.PUBLISHED) {
+      throw new AppError("INVALID_STATE", "Can only ask questions on published listings", 409);
+    }
+    if (listing.userId === askerId) {
+      throw new AppError("FORBIDDEN", "Cannot ask a question on your own listing", 403);
+    }
+
+    const question = await prisma.listingQuestion.create({
+      data: { listingId, askerId, question: body.question },
+    });
+
+    // Notify listing owner
+    await createNotification(prisma, {
+      userId: listing.userId,
+      type: NotificationType.LISTING_QUESTION_RECEIVED,
+      title: "Nouvelle question sur votre annonce",
+      body: `Question : "${body.question.slice(0, 100)}${body.question.length > 100 ? "…" : ""}"`,
+      dataJson: { questionId: question.id, listingId, listingTitle: listing.title, askerId },
+    });
+
+    ok(res, { questionId: question.id }, 201);
+  }),
+);
+
+// GET /marketplace/listings/:id/questions — list Q&A (public: answered only; owner: all)
+router.get(
+  "/marketplace/listings/:id/questions",
+  optionalAuth,
+  asyncHandler(async (req, res) => {
+    const listingId = req.params.id;
+    const userId = (req as RequestWithOptionalUser).user?.userId;
+    const query = paginationQuerySchema.parse(req.query);
+    const { cursor, limit } = query;
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { userId: true, isHidden: true },
+    });
+    if (!listing || listing.isHidden) throw new AppError("NOT_FOUND", "Listing not found", 404);
+
+    const isOwner = userId === listing.userId;
+    const where: Prisma.ListingQuestionWhereInput = { listingId };
+
+    // Non-owners only see answered questions
+    if (!isOwner) where.answer = { not: null };
+
+    if (cursor) {
+      const c = decodeCursor(cursor);
+      where.AND = {
+        OR: [
+          { createdAt: { lt: new Date(c.v as string) } },
+          { createdAt: new Date(c.v as string), id: { lt: c.id as string } },
+        ],
+      };
+    }
+
+    const items = await prisma.listingQuestion.findMany({
+      where,
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take: limit + 1,
+    });
+
+    const page = buildPage(items, limit, (item) => ({
+      v: item.createdAt.toISOString(),
+      id: item.id,
+    }));
+
+    ok(res, page);
+  }),
+);
+
+// POST /marketplace/listings/:id/questions/:qid/answer — answer a question (owner only)
+router.post(
+  "/marketplace/listings/:id/questions/:qid/answer",
+  requireAuth,
+  requireNotBanned,
+  asyncHandler(async (req, res) => {
+    const { id: listingId, qid: questionId } = req.params;
+    const userId = (req as RequestWithUser).user.userId;
+    const body = answerQuestionBodySchema.parse(req.body ?? {});
+
+    const listing = await prisma.listing.findUnique({
+      where: { id: listingId },
+      select: { userId: true, title: true },
+    });
+    if (!listing) throw new AppError("NOT_FOUND", "Listing not found", 404);
+    if (listing.userId !== userId) throw new AppError("FORBIDDEN", "Only the listing owner can answer", 403);
+
+    const question = await prisma.listingQuestion.findFirst({
+      where: { id: questionId, listingId },
+    });
+    if (!question) throw new AppError("NOT_FOUND", "Question not found", 404);
+    if (question.answer) throw new AppError("CONFLICT", "This question already has an answer", 409);
+
+    await prisma.listingQuestion.update({
+      where: { id: questionId },
+      data: { answer: body.answer, answeredAt: new Date() },
+    });
+
+    // Notify asker
+    await createNotification(prisma, {
+      userId: question.askerId,
+      type: NotificationType.LISTING_QUESTION_ANSWERED,
+      title: "Réponse à votre question",
+      body: `Le vendeur a répondu à votre question sur "${listing.title}".`,
+      dataJson: { questionId, listingId, listingTitle: listing.title },
+    });
+
+    ok(res, { ok: true });
   }),
 );
 

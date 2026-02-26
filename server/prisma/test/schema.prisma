@@ -39,6 +39,9 @@ model Listing {
   images         ListingImage[]
   favorites      Favorite[]
   reports        ListingReport[]
+  purchaseOrders PurchaseOrder[]
+  shipping       ListingShipping?
+  questions      ListingQuestion[]
 
   @@index([userId])
   @@index([status, createdAt])
@@ -408,6 +411,8 @@ model SellerReputation {
   totalTrades    Int      @default(0)
   disputesCount  Int      @default(0)
   reportsCount   Int      @default(0)
+  ratingSum      Int      @default(0)
+  ratingCount    Int      @default(0)
   updatedAt      DateTime @updatedAt
 
   @@index([score])
@@ -495,6 +500,94 @@ model UserPortfolioSnapshot {
   capturedAt      DateTime @default(now())
 
   @@index([userId, capturedAt])
+}
+
+// --- Notifications ---
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String
+  dataJson  Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
+}
+
+// --- Purchase Orders ---
+
+model PurchaseOrder {
+  id             String   @id @default(cuid())
+  buyerUserId    String
+  listingId      String
+  status         String   @default("PENDING")
+  priceCents     Int
+  currency       String   @default("EUR")
+  externalRef    String?
+  webhookEventId String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  listing Listing @relation(fields: [listingId], references: [id])
+
+  @@index([buyerUserId, status, createdAt])
+  @@index([listingId, status])
+}
+
+// --- Shipping ---
+
+model ListingShipping {
+  id            String   @id @default(cuid())
+  listingId     String   @unique
+  method        String
+  isFree        Boolean  @default(false)
+  priceCents    Int?
+  currency      String   @default("EUR")
+  estimatedDays String?
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  listing Listing @relation(fields: [listingId], references: [id])
+}
+
+// --- Seller Reviews ---
+
+model SellerReview {
+  id             String   @id @default(cuid())
+  reviewerUserId String
+  sellerUserId   String
+  rating         Int
+  comment        String?
+  listingId      String?
+  tradeOfferId   String?
+  createdAt      DateTime @default(now())
+
+  @@unique([reviewerUserId, listingId])
+  @@unique([reviewerUserId, tradeOfferId])
+  @@index([sellerUserId, createdAt])
+}
+
+// --- Listing Q&A ---
+
+model ListingQuestion {
+  id          String    @id @default(cuid())
+  listingId   String
+  askerId     String
+  question    String
+  answer      String?
+  answeredAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  listing Listing @relation(fields: [listingId], references: [id])
+
+  @@index([listingId, createdAt])
+  @@index([askerId, createdAt])
 }
 
 // --- Job snapshot-all : curseur pour reprise après crash ---
